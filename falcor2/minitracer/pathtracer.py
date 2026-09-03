@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from enum import Enum
 from os import PathLike
-from typing import Any, Union, Optional
+from typing import Any, Optional, Union
 
 from slangpy import Device, Texture, uint2, uint3
 from slangpy.core.function import FunctionNode
@@ -15,6 +16,13 @@ from falcor2.minitracer.accumulator import Accumulator
 import slangpy as spy
 
 
+class RayTracingPipelineAPI(str, Enum):
+    """Ray tracing pipeline API used by MiniTracer."""
+
+    legacy = "legacy"
+    structural = "structural"
+
+
 class PathTracer(PropertyObject):
     def __init__(self, device: "Device"):
         super().__init__()
@@ -25,9 +33,12 @@ class PathTracer(PropertyObject):
             device.load_module("falcor2.minitracer.renderers.simplepathtracer"),
             link=[self._utils, self._scene],
         )
+        self._legacy_module: Optional[spy.Module] = None
+        self._structural_module: Optional[spy.Module] = None
         self._constants = {}
         self._temp_accumulator: Optional[Accumulator] = None
         self._use_raytracing_pipeline = False
+        self._ray_tracing_pipeline_api = RayTracingPipelineAPI.legacy
         # CUDA/OptiX does not support TraceRayInline
         if self._device.info.type == spy.DeviceType.cuda:
             self._use_raytracing_pipeline = True
@@ -67,6 +78,54 @@ class PathTracer(PropertyObject):
             raise ValueError("Inline path tracing is not supported on CUDA/OptiX devices")
         self._use_raytracing_pipeline = value
 
+    @property
+    def ray_tracing_pipeline_api(self) -> RayTracingPipelineAPI:
+        """Select the legacy or structural API when pipeline ray tracing is enabled."""
+        return self._ray_tracing_pipeline_api
+
+    @ray_tracing_pipeline_api.setter
+    def ray_tracing_pipeline_api(self, value: Union[RayTracingPipelineAPI, str]):
+        try:
+            mode = RayTracingPipelineAPI(value)
+        except ValueError:
+            choices = ", ".join(mode.value for mode in RayTracingPipelineAPI)
+            message = f"Unknown ray tracing pipeline API '{value}'; choose {choices}"
+            raise ValueError(message) from None
+        if (
+            mode == RayTracingPipelineAPI.structural
+            and not self._device.slang_session.desc.compiler_options.enable_experimental_features
+        ):
+            raise ValueError(
+                "Structural ray tracing requires enable_experimental_features in the device's "
+                "compiler options; use falcor2.minitracer.tools.create_device()."
+            )
+        self._ray_tracing_pipeline_api = mode
+
+    def _get_structural_module(self) -> spy.Module:
+        if self._structural_module is None:
+            self._structural_module = spy.Module(
+                self._device.load_module(
+                    "falcor2.minitracer.renderers.simplepathtracer_structural"
+                ),
+                link=[self._module],
+            )
+        return self._structural_module
+
+    def _get_legacy_module(self) -> spy.Module:
+        if self._legacy_module is None:
+            self._legacy_module = spy.Module(
+                self._device.load_module("falcor2.minitracer.renderers.simplepathtracer_legacy"),
+                link=[self._module],
+            )
+        return self._legacy_module
+
+    def _get_render_module(self) -> spy.Module:
+        if self._use_raytracing_pipeline:
+            if self._ray_tracing_pipeline_api == RayTracingPipelineAPI.structural:
+                return self._get_structural_module()
+            return self._get_legacy_module()
+        return self._module
+
     def render(
         self,
         scene: Scene,
@@ -82,7 +141,7 @@ class PathTracer(PropertyObject):
         camera.recompute()
 
         self.call(
-            self.find_render_function(self._module, "render"),
+            self.find_render_function(self._get_render_module(), "render"),
             scene=scene,
             ray_sampler=camera,
             output=color,
@@ -106,7 +165,7 @@ class PathTracer(PropertyObject):
         camera.recompute()
 
         self.call(
-            self.find_render_function(self._module, "render_bwd"),
+            self.find_render_function(self._get_render_module(), "render_bwd"),
             scene=scene,
             ray_sampler=camera,
             output_grad=color.grad,
@@ -138,7 +197,7 @@ class PathTracer(PropertyObject):
         camera.recompute()
 
         self.call(
-            self.find_render_function(self._module, "render_guides"),
+            self.find_render_function(self._get_render_module(), "render_guides"),
             scene=scene,
             ray_sampler=camera,
             spp=spp,
@@ -245,8 +304,16 @@ class PathTracer(PropertyObject):
         self._module.apply_tonemap(input, output)
 
     def load_module(self, path: PathLike[str]):
+        link_root = self._module
+        if self._use_raytracing_pipeline:
+            if self._ray_tracing_pipeline_api == RayTracingPipelineAPI.structural:
+                link_root = self._get_structural_module()
+            else:
+                link_root = self._get_legacy_module()
         module = spy.Module.load_from_file(
-            self._device, path=str(path), link=[self._utils, self._scene, self._module]
+            self._device,
+            path=str(path),
+            link=[link_root],
         )
         return module
 
@@ -256,7 +323,11 @@ class PathTracer(PropertyObject):
         func_name: str,
     ) -> FunctionNode:
         if self._use_raytracing_pipeline:
-            return module.require_function(func_name + "<RayTracingSceneIntersector>")
+            if self._ray_tracing_pipeline_api == RayTracingPipelineAPI.structural:
+                intersector = "StructuralRayTracingSceneIntersector"
+            else:
+                intersector = "RayTracingSceneIntersector"
+            return module.require_function(f"{func_name}<{intersector}>")
         else:
             return module.require_function(func_name + "<RayQuerySceneIntersector>")
 
@@ -268,10 +339,15 @@ class PathTracer(PropertyObject):
     ):
         call_func: Any = func
         if self._use_raytracing_pipeline:
-            call_func = (
-                call_func.constants(self._constants)
-                .set({"g_scene": scene.get_this()})
-                .ray_tracing(
+            call_func = call_func.constants(self._constants).set({"g_scene": scene.get_this()})
+            if self._ray_tracing_pipeline_api == RayTracingPipelineAPI.structural:
+                call_func = call_func.ray_tracing(
+                    trace_program_layout="MiniTracerProgramLayout",
+                    max_recursion=5,
+                    max_ray_payload_size=32,
+                )
+            else:
+                call_func = call_func.ray_tracing(
                     hit_groups=[
                         {
                             "hit_group_name": "rt_hit",
@@ -283,7 +359,6 @@ class PathTracer(PropertyObject):
                     max_recursion=5,
                     max_ray_payload_size=32,
                 )
-            )
         else:
             call_func = call_func.constants(self._constants).set({"g_scene": scene.get_this()})
         return call_func.call(**kwargs)
