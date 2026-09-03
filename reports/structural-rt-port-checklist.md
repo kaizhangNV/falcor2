@@ -58,9 +58,13 @@ in this file.
     layouts materialize on Apple M4 Metal and compiler-owned stages compile to AIR. The UI suite
     also passes on Windows D3D12, Vulkan, and CUDA; the planned Phase 3 cross-platform gate is
     complete.
-- [x] Add a clean-clone Phase 3 reproduction recipe covering the pinned Slang, SlangPy, and Falcor
-  revisions, capped native build, focused runtime commands, expected results, and the boundary
-  between headless GPU validation and a future interactive sample.
+- [x] Add real Phase 3 samples plus a clean-clone reproduction recipe covering the pinned Slang,
+  SlangPy, and Falcor revisions, capped native build, sample commands, focused regression commands,
+  and expected results.
+  - Sample implementation commit: `f4062580a80b9765567f10a7c4eff840d68ccc0a`.
+  - The interactive sample runs the normal Cornell-box editor with structural ScenePicker and
+    SelectionProbe. The deterministic headless sample runs their exact production GPU chain and
+    writes three viewable PNGs without importing test code.
   - Recipe: [`structural-rt-phase3-reproduction.md`](structural-rt-phase3-reproduction.md)
 - [x] Phase 1 SlangPy/SGL source implementation committed and pushed as
   `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
@@ -430,6 +434,11 @@ the first Falcor renderer parity test.
 - [x] Leave SelectionProbe's inline `RayQuery` branch unchanged.
 - [x] Keep Phase 3 structural shaders in implicit-module form because E36119 incorrectly requires
   Metal support during Vulkan/CUDA explicit-module loads.
+- [x] Add a standalone interactive Cornell-box sample that exposes and selects the Editor's
+  production structural ScenePicker and SelectionOverlay services.
+- [x] Add a standalone deterministic headless sample that passes the structural ScenePicker's
+  exact GPU ID texture into structural SelectionProbe and saves the picker, probe, and final
+  overlay images.
 
 ### Phase 4: ReferencePathTracer
 
@@ -553,6 +562,12 @@ the first Falcor renderer parity test.
 - [x] SelectionProbe: complete masks match legacy on Linux Vulkan/CUDA and Windows
   D3D12/Vulkan/CUDA and match unchanged inline controls on Vulkan and D3D12, including ignored and
   accepted/end-search candidate cases. CUDA RayQuery is unavailable.
+- [x] Standalone Phase 3 samples on Linux Vulkan:
+  - The interactive Cornell-box sample completed a bounded three-frame run and saved its final
+    post-overlay viewport with the occluded back face highlighted green.
+  - The headless structural chain found 174,724 selected pixels, including 53,824 pixels hidden
+    behind the visible front quad. Its picker, probe, and final overlay PNGs were byte-identical to
+    a second run through the legacy pipeline.
 - [ ] Reference scatter: finite, non-zero output agrees with legacy non-SER output.
 - [ ] Deferred Reference visibility gate: pipeline and inline visibility agree at the existing
   tolerances after the multi-payload design is approved and implemented.
@@ -1238,5 +1253,39 @@ For every implementation commit, append one entry in chronological order with al
   by preloading `falcor2.render` in real initialization order. A full Falcor macOS build remains
   blocked by a pre-existing OpenUSD ARM64 failure.
 - **Paired commit/submodule pin:** Slang
+  `036132fa8fbfbe2e9300a0e0edb46d0405d973d0`; SlangPy
+  `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
+
+### Falcor Phase 3 runnable-sample entry - 2026-09-03
+
+- **Repository:** `kaizhangNV/falcor2`
+- **Branch:** `codex/structural-rt-port`
+- **Commit:** `f4062580a80b9765567f10a7c4eff840d68ccc0a`
+- **Intent:** Replace test-only reproduction guidance with actual standalone interactive and
+  headless examples of the Phase 3 production ScenePicker-to-SelectionProbe path.
+- **Files changed:**
+  - `examples/ui/structural_scene_editor.py`
+  - `examples/ui/structural_scene_tools.py`
+  - `falcor2/editor/editor.py`
+- **Public API change:** Add read-only `Editor.scene_editor`, `Editor.scene_picker`, and
+  `Editor.selection_overlay` properties. They expose the same objects already owned and executed by
+  the editor, allowing samples and applications to select their tracing policy without private
+  member access. No native ABI changes are introduced by this Python-only addition.
+- **Runtime behavior:** The editor example enables experimental Slang features and explicitly sets
+  both `use_raytracing_pipeline = True` and `ray_tracing_pipeline_api = structural` on ScenePicker
+  and SelectionOverlay. Its Cornell-box PathTracer remains unchanged. The headless example builds
+  layered two-submesh quads, runs a structural ScenePicker, feeds its exact ID texture to structural
+  SelectionProbe, validates a rear hit through the front occluder, and writes three PNGs.
+- **Validation:** On Linux Vulkan, the editor example completed three bounded 640x480 frames at
+  four spp and saved the post-overlay Cornell-box viewport. The structural headless example at
+  640x480 reported IDs `[0, 1, 2, 3, 4294967295]`, 174,724 selected pixels, and 53,824 selected
+  pixels hidden behind the front quad. A legacy run reported the same counts, and all three PNG
+  pairs were byte-identical. The focused production UI regression suite remained 5/5 passing.
+- **Known limitations:** Interactive presentation is limited to Vulkan on Linux and Vulkan/D3D12
+  on Windows. CUDA/OptiX uses the headless example. Metal structural RT runtime remains unavailable.
+  The interactive sample demonstrates the production controller binding; the deterministic sample
+  is the stronger explicit proof of non-selected any-hit rejection because it disables the
+  selected-object AABB shortcut.
+- **Paired compiler/submodule pin:** Slang
   `036132fa8fbfbe2e9300a0e0edb46d0405d973d0`; SlangPy
   `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.

@@ -1,40 +1,133 @@
-# Phase 3 ScenePicker and SelectionProbe reproduction
+# Phase 3 ScenePicker and SelectionProbe samples and reproduction
 
-This recipe reproduces the Phase 3 structural ray-tracing runtime proof for Falcor's production
-`ScenePicker` and `SelectionOverlay` classes. The focused tests are headless. They are not an
-interactive editor sample and do not open a window.
+This recipe starts with two real standalone samples under `examples/ui/`. Neither sample imports
+pytest, Falcor's testing helpers, or code from `tests/`.
 
-## Scope
+- `structural_scene_editor.py` opens the normal Falcor editor on the Cornell box. Mouse selection
+  uses the production structural `ScenePicker`, and the displayed selection highlight uses the
+  production structural SelectionProbe inside `SelectionOverlay`.
+- `structural_scene_tools.py` is a deterministic headless example. It creates two overlapping
+  quads, passes the exact GPU texture produced by a structural `ScenePicker` into a structural
+  `SelectionOverlay`, verifies the selected rear quad was found behind the front occluder, and
+  writes three viewable PNG files.
 
-The tests exercise the following production paths:
+The focused pytest cases remain later in this document as optional regression validation.
 
-- `ScenePicker` creates a structural ray-tracing pipeline and shader table, links structural
-  ray-generation/closest-hit plus a slot-zero miss stage, dispatches rays, and writes the complete
-  geometry-instance ID texture.
-- `SelectionOverlay::draw_overlay()` dispatches the structural SelectionProbe ray-generation,
-  any-hit, and slot-zero miss configuration. The test proves that traversal ignores a non-selected
-  front quad and accepts a selected rear quad behind it.
-- Structural output is compared exactly with the legacy pipeline output. Vulkan and D3D12 also
-  compare against the unchanged inline ray-query path.
+## What the samples prove
 
-The test scene contains two overlapping triangle quads. Each quad has two independently
-addressable BLAS geometries, and the image also contains miss pixels. This covers four geometry IDs,
-closest-hit output, miss-pixel output, `ignoreHit()`, and `acceptHitAndEndSearch()`. It does not use
-an independent payload sentinel to prove miss-stage invocation in isolation.
+The sample data flow is:
 
-This recipe does not prove interactive mouse picking in an editor window, one end-to-end
-structural-ScenePicker-to-structural-SelectionOverlay chain, the final displayed selection-overlay
-pixels, non-zero ray-type slots with distinct sentinels, callable shaders, LSS, or Metal runtime
-behavior. The SelectionProbe parity test deliberately supplies the same legacy ScenePicker texture
-to both probe implementations so it isolates the probe behavior. Metal structural pipeline runtime
-is unavailable in this stack.
+```text
+structural ScenePicker
+    -> geometry_instance_id_texture
+    -> structural SelectionOverlay / SelectionProbe
+    -> final highlighted RGBA texture
+```
+
+`ScenePicker` creates a structural ray-tracing pipeline and shader table, links structural
+ray-generation/closest-hit and slot-zero miss stages, dispatches rays, and writes the
+geometry-instance ID texture. `SelectionOverlay::draw_overlay()` dispatches structural
+SelectionProbe ray-generation, any-hit, and slot-zero miss stages.
+
+The deterministic sample's front and rear quads each contain two independently addressable BLAS
+geometries, and the image includes miss pixels. It selects the rear geometry IDs directly, which
+disables the optional selected-object AABB shortcut. Rays encounter and ignore the unselected front
+quad before accepting the selected rear quad. This covers four geometry IDs, closest-hit output,
+miss-pixel output, `ignoreHit()`, `acceptHitAndEndSearch()`, and the final overlay pixels in one
+end-to-end run.
+
+The interactive example additionally proves that Falcor's normal editor/controller bindings drive
+the structural services. Its main PathTracer is intentionally unchanged; only editor picking and
+selection tracing use the new pipeline API.
+
+These samples do not cover non-zero ray-type slots with distinct sentinels, callable shaders, LSS,
+or Metal runtime behavior. Metal structural pipeline runtime is unavailable in this stack.
+
+## Run the actual samples in an already-built checkout
+
+Run all commands below from the Falcor2 repository root. Ensure the checkout is built as described
+later in this document, then expose both local Python packages:
+
+```bash
+export PYTHONPATH="$PWD:$PWD/external/slangpy"
+```
+
+### Interactive Cornell-box sample
+
+On Linux with Vulkan:
+
+```bash
+.venv/bin/python examples/ui/structural_scene_editor.py --device vulkan
+```
+
+The window opens with `/cornell_box/tall_box_back/tall_box_back` selected. Its green highlight is
+visible through the front of the tall box, demonstrating SelectionProbe. Left-click another object
+in the viewport to exercise ScenePicker and change the selection. Press `F5` to toggle the editor
+panels and `Escape` to exit.
+
+For a bounded run that also saves the final post-overlay image:
+
+```bash
+.venv/bin/python examples/ui/structural_scene_editor.py \
+  --device vulkan --width 640 --height 480 --spp 4 --frames 3 \
+  --output output/structural-scene-tools/cornell-editor-structural.png
+```
+
+The program prints all three relevant choices explicitly:
+
+```text
+ScenePicker ray tracing: structural pipeline
+SelectionProbe ray tracing: structural pipeline
+Main PathTracer: unchanged (this demo only ports editor picking and selection tracing)
+```
+
+### Deterministic headless sample
+
+On Linux with Vulkan:
+
+```bash
+.venv/bin/python examples/ui/structural_scene_tools.py \
+  --device vulkan --pipeline-api structural --width 640 --height 480
+```
+
+The sample writes:
+
+- `output/structural-scene-tools/scene-picker-structural.png`: pseudo-colored geometry IDs;
+- `output/structural-scene-tools/selection-probe-structural.png`: the raw probe mask colorized green;
+- `output/structural-scene-tools/selection-overlay-structural.png`: the final composited overlay.
+
+The recorded Linux Vulkan run reported:
+
+```text
+Backend: vulkan
+Pipeline API: structural
+Front geometry IDs: [0, 1]
+Rear geometry IDs: [2, 3]
+Center pick: 0 (front geometry range)
+Geometry-ID values: [0, 1, 2, 3, 4294967295]
+Selected/occluded pixels: 174724
+Selected pixels hidden behind the front quad: 53824
+```
+
+The final count must be greater than zero. It specifically counts pixels where ScenePicker sees a
+front geometry ID while SelectionProbe reaches selected geometry behind it.
+
+To run the same standalone example through the legacy pipeline for manual comparison:
+
+```bash
+.venv/bin/python examples/ui/structural_scene_tools.py \
+  --device vulkan --pipeline-api legacy --width 640 --height 480
+```
+
+For the recorded run, all three legacy PNG files were byte-identical to their structural
+counterparts.
 
 ## Exact source revisions
 
 Use these revisions to reproduce the recorded result:
 
 ```text
-Falcor2:  890f6d87bf439a77e203381e43caa7552be36b08
+Falcor2:  f4062580a80b9765567f10a7c4eff840d68ccc0a
           branch codex/structural-rt-port
 SlangPy:  aa8840bc8ca644c45ea9d475f3f937b66faf8208
           branch codex/structural-rt-host-bridge
@@ -44,7 +137,7 @@ Slang:    036132fa8fbfbe2e9300a0e0edb46d0405d973d0
 
 The Falcor2 revision pins the SlangPy revision as the `external/slangpy` submodule.
 
-## Fast path in an already-built Linux checkout
+## Optional focused regression tests in an already-built Linux checkout
 
 From the Falcor2 repository root:
 
@@ -129,7 +222,7 @@ Return to the parent directory containing `slang-structural-rt`, then run:
 git clone --recursive --branch codex/structural-rt-port \
   https://github.com/kaizhangNV/falcor2.git falcor2
 cd falcor2
-git checkout 890f6d87bf439a77e203381e43caa7552be36b08
+git checkout f4062580a80b9765567f10a7c4eff840d68ccc0a
 git submodule sync --recursive
 git submodule update --init --recursive
 ```
@@ -248,11 +341,33 @@ options: the validated worker changed them to `/MP8` and ran the outer build wit
 the complete compiler process tree stayed at or below eight jobs. Do not use an unbounded build or
 assume that `cmake --parallel 8` alone caps `/MP` child processes.
 
-After building the same three source revisions in a Visual Studio 2022 Developer PowerShell, select
-one backend and run the focused tests:
+After building the same three source revisions in a Visual Studio 2022 Developer PowerShell, set
+the local package path and launch the interactive sample on D3D12:
 
 ```powershell
 $env:PYTHONPATH = "$PWD;$PWD\external\slangpy"
+
+.\.venv\Scripts\python.exe examples\ui\structural_scene_editor.py --device d3d12
+```
+
+Vulkan is also presentation-capable on Windows; replace `d3d12` with `vulkan` to use it. For a
+headless D3D12 run that writes all three diagnostic images:
+
+```powershell
+.\.venv\Scripts\python.exe examples\ui\structural_scene_tools.py `
+  --device d3d12 --pipeline-api structural --width 640 --height 480
+```
+
+CUDA/OptiX cannot present the interactive editor, but it can run the same headless sample:
+
+```powershell
+.\.venv\Scripts\python.exe examples\ui\structural_scene_tools.py `
+  --device cuda --pipeline-api structural --width 640 --height 480
+```
+
+The focused regression tests remain available as a separate check. Select a backend and run:
+
+```powershell
 $env:SLANGPY_DEVICE = "d3d12" # or "vulkan" or "cuda"
 
 .\.venv\Scripts\python.exe -m pytest -v -s `
@@ -282,10 +397,14 @@ Do not expect these runtime commands to collect a Metal case. Metal structural p
 not available in the current Falcor/SGL stack. Phase 3 has compile/reflection/Metal-AIR validation
 on Apple M4, but that is not runtime ScenePicker or SelectionProbe coverage.
 
-## Current interactive-sample limitation
+## Current sample limitations
 
-There is no standalone structural ScenePicker/SelectionProbe example in `examples/` yet. The
-Falcor editor constructs these production services, but it does not enable experimental Slang
-features or select the structural API. Therefore the supported Phase 3 reproduction today is the
-headless runtime test above. The earlier colorized ID-map and selection-mask images were diagnostic
-visualizations of those GPU buffers, not screenshots of a live editor session.
+The interactive sample needs a presentation-capable graphics backend, so use Vulkan on Linux and
+Vulkan or D3D12 on Windows. CUDA/OptiX has no editor presentation surface; use the deterministic
+headless sample with `--device cuda` instead. Metal structural pipeline runtime is unavailable, so
+macOS remains compile/reflection/Metal-AIR coverage rather than a runnable Phase 3 sample.
+
+The Cornell-box PathTracer in the interactive example is not yet ported to the structural API. It
+only supplies the base image. The structural work demonstrated there is the production
+ScenePicker-to-SelectionProbe editor interaction. The deterministic example provides the stricter
+end-to-end proof, including a non-selected front hit that the structural any-hit stage ignores.
