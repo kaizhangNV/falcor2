@@ -52,7 +52,7 @@ create_texture_from_embedded_data(sgl::Device* device, const ImporterTexture& im
     try {
         // Load bitmap from embedded texture data
         sgl::MemoryStream stream(importer_texture.texture_data.data(), importer_texture.texture_data.size());
-        ref<sgl::Bitmap> bitmap = ref(new sgl::Bitmap(&stream));
+        ref<sgl::Bitmap> bitmap = ref<sgl::Bitmap>(new sgl::Bitmap(&stream));
 
         // Create texture from bitmap via TextureLoader
         if (!bitmap->empty()) {

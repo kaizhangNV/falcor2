@@ -190,8 +190,8 @@ void SelectionOverlay::draw_overlay(
         [&](sgl::ShaderCursor cursor)
         {
             cursor = cursor.find_entry_point(0);
-            cursor["output_texture"] = ref(output_texture);
-            cursor["geometry_instance_id_texture"] = ref(geometry_instance_id_texture);
+            cursor["output_texture"] = ref<sgl::Texture>(output_texture);
+            cursor["geometry_instance_id_texture"] = ref<sgl::Texture>(geometry_instance_id_texture);
             cursor["selected_hit_texture"] = m_selected_hit_texture;
             cursor["selection_bitmap"] = m_selection_bitmap_buffer;
             cursor["selection_bitmap_bit_count"] = bitmap_bit_count;

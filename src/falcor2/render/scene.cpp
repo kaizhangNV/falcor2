@@ -220,7 +220,7 @@ void Scene::set_active_camera(Camera* camera)
 {
     if (camera) {
         FALCOR_CHECK(camera->scene() == this, "Camera does not belong to this scene.");
-        m_active_camera = ref(camera);
+        m_active_camera = ref<Camera>(camera);
     } else {
         m_active_camera = nullptr;
     }
@@ -280,7 +280,7 @@ SceneUpdateFlags Scene::_update(SceneUpdateContext& ctx)
         for (Component* component : m_component_collection.objects()) {
             if (component->is_valid()) {
                 if (Camera* camera = component->as<Camera>()) {
-                    m_active_camera = ref(camera);
+                    m_active_camera = ref<Camera>(camera);
                     break;
                 }
             }
@@ -569,7 +569,7 @@ void Scene::_handle_removed_objects()
         for (Component* component : m_component_collection.objects()) {
             if (component->is_valid()) {
                 if (Camera* camera = component->as<Camera>()) {
-                    m_active_camera = ref(camera);
+                    m_active_camera = ref<Camera>(camera);
                     break;
                 }
             }
