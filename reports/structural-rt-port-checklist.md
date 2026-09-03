@@ -28,7 +28,7 @@ in this file.
   - Baseline commit: `b0f010593568239005df17c30ea875c0edf25049`
 - [x] Record the compiler dependency after all fixes needed through Phase 3 are committed,
   published, and validated.
-  - Current dependency: `036132fa8fbfbe2e9300a0e0edb46d0405d973d0` on
+  - Phase 3 dependency: `036132fa8fbfbe2e9300a0e0edb46d0405d973d0` on
     `kaizhangNV/slang:draft/unified-pipeline-rt-api` (also mirrored to the auxiliary
     `codex/structural-rt-cuda-hit-attributes` branch).
   - It includes `7b2bf16a65406ad4fc5973b78c05bc044e57dc24` (CUDA late inputs),
@@ -66,6 +66,24 @@ in this file.
     SelectionProbe. The deterministic headless sample runs their exact production GPU chain and
     writes three viewable PNGs without importing test code.
   - Recipe: [`structural-rt-phase3-reproduction.md`](structural-rt-phase3-reproduction.md)
+- [x] Complete the scoped cross-platform acceptance matrix for the published Phase 4 ReferencePathTracer
+  scatter port.
+  - Falcor implementation commit `12448a57d16a53009973d3ff7b3a31eff2095d74` splits the legacy
+    and structural pipeline stages,
+    selects them through an additive Python property and sample CLI option, keeps visibility on
+    inline `RayQuery`, and maps the retained `SchedulingMode.ser` value to the simple scheduler with
+    a warning.
+  - SlangPy commit `77205c2f3a5313c772d2df6c3cd19600887e938d` adds structural minimum
+    SBT counts, whole-program composition for generated code plus the base module, and
+    composed-entry-point hot reload.
+  - The matching compiler fix for structural-stage type-flow roots is pushed as
+    `0dc2a4df7ae288aebcf2d3e9b2a8779177ccc617` on
+    `kaizhangNV/slang:draft/unified-pipeline-rt-api`. The accepted scope passes Linux Vulkan and
+    Windows D3D12/Vulkan runtime validation plus macOS Metal compile/materialization validation.
+    CUDA ReferencePathTracer runtime remains capability-constrained by unavailable RayQuery support
+    and is explicitly non-gating for this scope.
+  - Reproduction recipe and result record:
+    [`structural-rt-phase4-reproduction.md`](structural-rt-phase4-reproduction.md)
 - [x] Phase 1 SlangPy/SGL source implementation committed and pushed as
   `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
 - [x] Final SlangPy validation/ExecPlan follow-ups committed and pushed; the Phase 0-1 submodule
@@ -119,8 +137,9 @@ This taxonomy records what kind of work each item requires; it does not mark the
     source type, then use distinct checked `(name, stage)` lookup for a concrete, non-generic stage
     declared directly in exactly one enumerable SGL leaf. Nested compositions can be flattened and
     ambiguity rejected without a new public compiler API.
-  - Imported-only stage ownership, generic structural stages, and hot-reload re-resolution remain
-    explicit follow-ups outside that bounded Phase 1 contract.
+  - Imported-only stage ownership and generic structural stages remain explicit follow-ups outside
+    that bounded Phase 1 contract. Composed-entry-point hot-reload re-resolution is implemented;
+    broader cached pipeline/shader-table invalidation coverage remains a hardening follow-up.
   - Metal ray-tracing pipeline, function-table, shader-table, and dispatch implementation.
 - **Correctness invariant, not an API gap:** exact numeric SBT slot preservation from Falcor's TLAS
   metadata through reflected structural slots and host shader-table arrays.
@@ -206,6 +225,14 @@ follow-ups. The checklist sections below track their containment and eventual re
   not require Metal support, add a compiler regression for default-internal and explicitly public
   forms in an explicit module,
   then restore MiniTracer's normal explicit-module syntax.
+- [x] Pin the Phase 4 structural-stage type-flow-root repair used by the published implementation.
+  ReferencePathTracer port complete. Compiler commit
+  `0dc2a4df7ae288aebcf2d3e9b2a8779177ccc617` on
+  `kaizhangNV/slang:draft/unified-pipeline-rt-api` makes entry-point-info and structural hit,
+  miss, and callable invoke functions roots of the first specialization/type-flow pass, so dynamic
+  interface calls inside synthesized stages are specialized while linked external conformances
+  remain visible. The commit is pushed and the published SlangPy/Falcor tuple passes the scoped
+  Linux, Windows, and macOS acceptance matrix.
 
 ## SlangPy repository: native SGL bridge
 
@@ -243,9 +270,9 @@ not imply that the bounded Phase 1 bridge is incomplete.
 - [x] Keep generic structural stage types unsupported in Phase 1 and document generic-argument
   materialization as a separate follow-up.
 - [ ] Add explicit generic-stage detection and a focused diagnostic regression.
-- [x] Treat structural hot reload as a documented follow-up: re-reflect the layout, re-run unique-leaf
-  resolution, and invalidate every dependent entry point, pipeline, and shader table before claiming
-  support.
+- [x] Rebuild modules before their registered entry points and linked programs during structural hot
+  reload, then re-resolve composed entry points against the rebuilt full composition. Broader cached
+  pipeline/shader-table invalidation coverage remains tracked in the test follow-ups below.
 - [x] Document and reject the case where different SGL leaves declare the same fully qualified stage
   type spelling. The reflected type name omits module identity, so the Phase 1 bridge must diagnose
   the multiple checked matches rather than guess which leaf owns the layout's stage.
@@ -318,16 +345,24 @@ not imply that the bounded Phase 1 bridge is incomplete.
   legacy configurations.
 - [ ] Validate actual cache separation and reuse when multiple structural layouts/pipelines are used
   in one process.
-- [x] Treat structural hot-reload invalidation as the explicit documented follow-up described above;
-  do not
-  infer it from deterministic signature-only tests.
+- [x] Include the composed-module scope and registered structural entry points in the two-phase hot-
+  reload rebuild instead of inferring reload support from deterministic signatures alone.
 - [x] Add no reflection-based inference for recursion, payload size, attribute size, or pipeline
   flags; preserve caller-supplied values and existing defaults.
+- [x] Publish the Phase 4 SlangPy extension that adds structural-only
+  `min_hit_group_count`, `min_miss_count`, and `min_callable_count` arguments, validates them as
+  non-negative, includes them in pipeline identity, and retains caller-required trailing SBT slots.
+- [x] Complete the generated-prelude/base-module composition path so structural reflection,
+  materialization, generated `raygen_main`, and external type conformances all resolve in one
+  canonical composed program and each conformance is applied once.
+- [x] Complete and locally validate two-phase hot reload: rebuild every module first, then its registered
+  entry points, then linked programs, retaining the full composed module as the type-lookup scope.
 
 ## SlangPy repository: tests
 
 Runtime sparse-slot selection, exhaustive signature-field separation, imported/generic stages,
-multi-pipeline caching, and hot reload are deliberately retained as non-blocking follow-up tests.
+multi-pipeline caching, and cached pipeline/shader-table invalidation after reload are deliberately
+retained as non-blocking follow-up tests.
 
 - [x] Keep the existing legacy ray tracing test unchanged and passing.
 - [x] Add the Phase 1 SlangPy-owned structural triangle hit/miss canary under `external/slangpy`
@@ -355,26 +390,30 @@ multi-pipeline caching, and hot reload are deliberately retained as non-blocking
 - [ ] Separately exercise actual multi-pipeline cache reuse/separation in one runtime process.
 - [ ] Separately exercise structural hot reload and dependent pipeline/shader-table invalidation
   before removing the Phase 1 hot-reload limitation.
+- [x] Verify prelude-defined and base-module-defined external conformances before and after
+  `reload_all_programs()` through the structural generated-raygen path.
 - [x] Run formatting, static checks, native SGL tests, and focused SlangPy Python tests.
 
 ## Falcor repository: host integration
 
 Phase 3 triangle integration is implemented at Falcor commit
-`bb92a32c09c26322a0eb474bd5031c0d4f65cd0f`. Items that require ReferencePathTracer, non-zero-slot
-runtime sentinels, callable groups, or structural LSS remain deliberately unchecked.
+`bb92a32c09c26322a0eb474bd5031c0d4f65cd0f`, and the bounded ReferencePathTracer integration is
+implemented at `12448a57d16a53009973d3ff7b3a31eff2095d74`. Items that require non-zero-slot runtime
+sentinels, callable groups, or structural LSS remain deliberately unchecked.
 
 - [x] Add a structural-layout companion API to `SceneRayTracingSetup`.
 - [x] Reuse the SGL adapter rather than reimplementing Slang reflection in Falcor or Python.
 - [x] Preserve Falcor's geometry-major SBT index rule:
   `geometry_type * ray_type_count + ray_type`.
-- [x] For the current scene policy, validate absolute hit slots `0..5` (three ray types for triangles,
-  followed by three for LSS) and miss slots `0..2`; structural group declarations must use those
-  physical indices rather than restarting at zero for each geometry type.
+- [x] For the current scene policy, validate physical bounds of six hit records and three miss
+  records. A structural layout declares only supported real groups at their exact numeric slots;
+  all remaining records are padding. The bounded structural path rejects scenes containing LSS.
 - [x] Preserve dummy records for absent ray types, absent geometry types, and sparse slots; choose a
   synthesized padding-group name that cannot collide with source or materialized stage names.
-- [ ] Assert the exact ReferencePathTracer legacy mapping: triangle scatter/visibility/reserved at
-  hit slots `0/1/2`, LSS scatter/visibility/reserved at `3/4/5`, and scatter/visibility/reserved miss
-  slots at `0/1/2`.
+- [x] Assert the Phase 4 triangle-only ReferencePathTracer mapping: the real structural scatter hit
+  group is slot `0`, the real scatter miss group is slot `0`, hit records `1..5` are collision-free
+  padding, and miss records `1..2` are empty padding. Do not describe hit slot `3` as a real LSS
+  group while `SceneRayTracingSetup::create_structural()` rejects LSS scenes.
 - [ ] Add sentinel stages that produce distinguishable results for every exercised hit and miss slot;
   cover triangle slots first and LSS slots when LSS structural support is enabled.
 - [ ] Preserve the CUDA built-in LSS intersection patch until structural LSS support is implemented.
@@ -442,13 +481,33 @@ the first Falcor renderer parity test.
 
 ### Phase 4: ReferencePathTracer
 
-- [ ] Remove structural use of `HitObject::TraceRay`, `ReorderThread`, and `HitObject::Invoke`.
-- [ ] Use the existing non-SER `SimpleScheduler` implementation.
-- [ ] Decide and document compatibility behavior for the public `SchedulingMode.ser` value.
-- [ ] Add `ScatterTraceContext` and `ScatterProgramLayout` using `PathPayload`.
-- [ ] Keep visibility on inline `RayQuery` for the initial structural port.
-- [ ] Decide whether a request for structural pipeline visibility is rejected or mapped to inline
-  visibility, and expose that behavior clearly to users and tests.
+The implementation items below are published at the exact paired revisions in the Phase 4 ledger.
+The scoped Phase 4 acceptance matrix is complete: Linux Vulkan and Windows D3D12/Vulkan runtime,
+plus macOS Metal compile/materialization coverage.
+
+- [x] Split the shared ReferencePathTracer shader from mutually exclusive legacy and structural
+  pipeline-stage companions, and link only the selected companion.
+- [x] Remove structural use of `HitObject::TraceRay`, `ReorderThread`, and `HitObject::Invoke`; share
+  the ordinary `SimpleScheduler` loop through a tracer interface.
+- [x] Retain `SchedulingMode.ser` as a compatibility value that warns and maps to
+  `SchedulingMode.simple`. Actual SER behavior is deferred.
+- [x] Add `ScatterTraceContext` and `ScatterProgramLayout` using `PathPayload`, with one triangle
+  closest-hit group at hit slot `0`, one miss group at miss slot `0`, and no callable groups.
+- [x] Preserve the six-hit/three-miss host bounds using padding only: hit records `1..5` and miss
+  records `1..2` are not real Phase 4 groups.
+- [x] Keep visibility on inline `RayQuery`. Selecting structural scatter on a device without the
+  RayQuery capability fails clearly; requesting pipeline visibility while structural scatter is
+  selected warns and maps to inline visibility.
+- [x] Expose legacy/structural scatter selection through `ReferencePathTracerNode` and
+  `examples/pathtracer/simple.py`, with legacy remaining the default.
+- [x] Preserve path-tracer guide outputs and scene-specialization caches when switching
+  legacy -> structural -> legacy on one node; use separate per-API scene-module cache state.
+- [x] Compose generated prelude code, the selected path-tracer module, and external scene type
+  conformances before structural reflection/materialization.
+- [x] Materialize the structural adapter only once per built dispatch. Obtain any required host
+  bounds through a cheap requirements query rather than constructing the adapter twice.
+- [x] Add focused configuration, sample-CLI, image/guide parity, API-switch, SBT-padding,
+  conformance, and hot-reload regression coverage.
 
 ### Deferred: multi-payload pipeline visibility
 
@@ -545,6 +604,24 @@ the first Falcor renderer parity test.
   - Compiler-owned closest-hit/miss and any-hit fixtures generated Metal and non-empty AIR.
   - Metal structural RT runtime is unavailable and remains non-gating; the ScenePicker full-
     `HitInfo` helper uses a partial compile-only fallback on this target.
+- [x] Phase 4 Linux Vulkan configuration and runtime parity suite at the published paired revisions:
+  19/19 passed in 8.53 seconds.
+- [x] Phase 4 Linux Vulkan bounded legacy and structural Cornell-box sample captures. Both the clean-
+  working-directory depth-1 pair and the richer depth-3, 64-frame pair are byte-identical within
+  each comparison.
+- [x] Phase 4 Windows D3D12 and Vulkan runtime parity at the final paired revisions: 46/46 selected
+  cases passed on `DESKTOP-GUULUMF`, including 2/2 ReferencePathTracer parity/API-switch cases and
+  5/5 Phase 3 UI non-regression cases on each backend.
+- [x] Record Phase 4 CUDA/OptiX capability containment. The local two-test lane skipped 2/2 in 0.32
+  seconds because the device reports no `Feature.ray_query`. The ReferencePathTracer structural path
+  requires inline visibility, so this is not structural CUDA runtime coverage and is explicitly
+  non-gating for the scoped Phase 4 acceptance.
+- [ ] Deferred: run Phase 4 CUDA/OptiX ReferencePathTracer parity if a supported backend/device later
+  exposes the required inline RayQuery capability.
+- [x] Phase 4 macOS compiler and actual `ScatterProgramLayout` Metal compile/materialization gate.
+  Direct compiler configurations passed 3/3, the actual layout reflected one hit and one miss and
+  materialized 6/3/0 physical hit/miss/callable slots, and three compiler-owned fixtures produced
+  non-empty AIR. Falcor Metal pipeline runtime remains deferred and is not a Phase 4 runtime gate.
 
 ### Sample exit gates
 
@@ -568,12 +645,15 @@ the first Falcor renderer parity test.
   - The headless structural chain found 174,724 selected pixels, including 53,824 pixels hidden
     behind the visible front quad. Its picker, probe, and final overlay PNGs were byte-identical to
     a second run through the legacy pipeline.
-- [ ] Reference scatter: finite, non-zero output agrees with legacy non-SER output.
+- [x] Reference scatter: finite, non-zero output agrees with legacy non-SER output on local Linux
+  Vulkan at `rtol=1e-4`, `atol=1e-5`; color and enabled guide outputs also agree across an
+  API-switch sequence.
 - [ ] Deferred Reference visibility gate: pipeline and inline visibility agree at the existing
   tolerances after the multi-payload design is approved and implemented.
 - [x] Stop for design review after the Phase 1 canary and the MiniTracer, ScenePicker, and
-  SelectionProbe renderer gates pass. The planned Linux/Windows runtime and macOS compile-only
-  matrix is complete; Phase 4 remains unstarted pending this review.
+  SelectionProbe renderer gates pass. That review boundary is satisfied; Phase 4 implementation is
+  published and its scoped Linux Vulkan, Windows D3D12/Vulkan, and macOS compile-only acceptance
+  matrix is complete.
 
 ## Change ledger
 
@@ -1289,3 +1369,152 @@ For every implementation commit, append one entry in chronological order with al
 - **Paired compiler/submodule pin:** Slang
   `036132fa8fbfbe2e9300a0e0edb46d0405d973d0`; SlangPy
   `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
+
+### Phase 4 implementation and scoped acceptance - 2026-09-03
+
+- **Repositories:** `kaizhangNV/falcor2`, `kaizhangNV/slangpy`, and `kaizhangNV/slang`
+- **Branches:** Falcor `codex/structural-rt-port`; SlangPy
+  `codex/structural-rt-host-bridge`; compiler `draft/unified-pipeline-rt-api` on the
+  `kaizhangNV/slang` fork. The auxiliary local compiler branch is
+  `codex/structural-rt-cuda-hit-attributes`.
+- **Publication commits:** Falcor `12448a57d16a53009973d3ff7b3a31eff2095d74`; SlangPy and Falcor
+  gitlink `77205c2f3a5313c772d2df6c3cd19600887e938d`; compiler
+  `0dc2a4df7ae288aebcf2d3e9b2a8779177ccc617` on
+  `kaizhangNV/slang:draft/unified-pipeline-rt-api`.
+- **Intent:** Port the ReferencePathTracer scatter route to the structural pipeline API without
+  changing its inline visibility traversal, while retaining the legacy scatter pipeline as the A/B
+  control and converting the exposed SER choice to ordinary non-SER scheduling.
+- **Falcor implementation files:**
+  - `examples/pathtracer/simple.py`
+  - `external/slangpy` (gitlink)
+  - `falcor2/rendernodes/reference_pathtracer_node.py`
+  - `slang/falcor2/rendernodes/reference_pathtracer.slang`
+  - `slang/falcor2/rendernodes/reference_pathtracer_legacy.slang`
+  - `slang/falcor2/rendernodes/reference_pathtracer_structural.slang`
+  - `src/falcor2/render/ray_tracing_setup.cpp`
+  - `src/falcor2/render/ray_tracing_setup.h`
+  - `src/falcor2_ext/render/ray_tracing_setup.cpp`
+  - `tests/native/render/test_scene.cpp`
+  - `tests/python/pathtracer/test_pathtracer.py`
+  - `tests/python/pathtracer/test_reference_pathtracer_pipeline_api.py`
+  - `tests/python/pathtracer/test_simple_sample.py`
+- **SlangPy/SGL implementation files:**
+  - `external/slangpy/slangpy/core/calldata.py`
+  - `external/slangpy/slangpy/core/function.py`
+  - `external/slangpy/slangpy/tests/slangpy_tests/test_raytracing.py`
+  - `external/slangpy/slangpy/tests/slangpy_tests/test_raytracing_config.py`
+  - `external/slangpy/slangpy/tests/slangpy_tests/test_raytracing_structural.slang`
+  - `external/slangpy/src/sgl/device/shader.cpp`
+  - `external/slangpy/src/sgl/device/shader.h`
+  - `external/slangpy/tests/sgl/device/test_structural_raytracing.cpp`
+- **Compiler implementation/test files:**
+  - `source/slang/slang-ir-typeflow-specialize.cpp`
+  - `tests/ray-tracing-2/target/metal/entry-point-dynamic-dispatch.slang`
+  - `tests/ray-tracing-2/target/portable/stage-dynamic-dispatch.slang`
+- **Documentation files:**
+  - `reports/structural-rt-port-plan.md`
+  - `reports/structural-rt-port-checklist.md`
+  - `reports/structural-rt-phase4-reproduction.md`
+- **Public API/ABI change:** Falcor adds the public native
+  `SceneRayTracingSetup::StructuralRequirements` value and exported
+  `SceneRayTracingSetup::get_structural_requirements()` symbol, with nanobind exposure. This is an
+  additive native API/exported-symbol change and does not change the existing object's layout.
+  Falcor also adds the Python `ReferencePathTracerNode.ray_tracing_pipeline_api` selector and sample
+  `--pipeline-api` option. SlangPy adds structural-only
+  `min_hit_group_count`, `min_miss_count`, and `min_callable_count` keyword arguments and includes
+  them in pipeline identity. SGL adds composed-entry-point reload/type-lookup behavior.
+- **Shader/SBT behavior change:** Common path-tracing logic is shared by separate legacy and
+  structural companions. Structural scatter uses `PathPayload`, `ScatterProgramLayout`, one real
+  triangle closest-hit group at hit slot `0`, one real miss at miss slot `0`, and no callable groups.
+  The host retains six hit and three miss records: hit `1..5` and miss `1..2` are padding. LSS scenes
+  are rejected, so hit slot `3` is not a real Phase 4 group.
+- **Legacy compatibility impact:** Legacy remains the default and the legacy pipeline remains the
+  comparison control. A request for `SchedulingMode.ser` now warns and selects simple scheduling;
+  a structural request for pipeline visibility warns and selects inline `RayQuery`. Structural mode
+  fails clearly when the device lacks RayQuery support.
+- **Tests/builds run:** Slang's portable and Metal dynamic-dispatch regressions passed 3/3. The
+  SlangPy build completed 119/119 steps; the focused structural/layout-hot-reload native shard passed
+  2/2 cases with 164 assertions, and the full hot-reload suite passed 13/13 with 43 assertions. The
+  SlangPy configuration suite passed 13/13 in 0.03 seconds, and the structural generated-raygen
+  prelude/reload test passed 1/1 in 4.46 seconds. The persistent-cache suite passed 9/9 with 145
+  assertions. Expected negative-test compiler diagnostics appeared, but each native suite reported
+  success and generated `.test_temp` output was moved to trash afterward. The Falcor production
+  build completed 158/158 steps. The Phase 4 Vulkan suite passed 19/19 in 8.53
+  seconds: 17/17 API/sample configuration cases and 2/2 runtime cases. The focused UI regression passed 3/3 in
+  4.74 seconds. SlangPy pre-commit passed all files, and Falcor pre-commit passed all Phase 4 files.
+  On Windows `DESKTOP-GUULUMF`, the capped exact-tuple build succeeded and 46/46 selected tests
+  passed: 13 SlangPy configuration; 17 Falcor API/sample configuration; one SlangPy structural case
+  on each of D3D12 and Vulkan; two ReferencePathTracer parity/API-switch cases on each backend; and
+  five Phase 3 UI non-regression cases on each backend. All 27 recorded worker hashes matched. On
+  macOS, the matching compiler and SlangPy builds succeeded; the structural/layout native shard
+  passed 2/2 with 164 assertions, full hot reload passed 13/13 with 43 assertions, the actual
+  `ScatterProgramLayout` reflected/materialized successfully on Metal, direct compiler configurations
+  passed 3/3, and three compiler-owned fixtures produced non-empty AIR. All native builds were capped
+  at no more than eight jobs.
+  The optional `falcor2_tests` target remains blocked by the pre-existing alias-template CTAD errors
+  already recorded for the unchanged broad native-test build.
+- **Platforms/backends:** The scoped Phase 4 acceptance matrix is complete: Linux Vulkan and Windows
+  D3D12/Vulkan implementation/runtime validation pass, and macOS Metal compile/materialization
+  validation passes. The exact
+  local CUDA lane skipped both Phase 4 runtime tests in 0.32 seconds because the device reports no
+  RayQuery capability; this is expected containment, not CUDA runtime coverage, and is explicitly
+  non-gating for the accepted scope. No Metal runtime result is claimed. Windows Vulkan also emitted
+  pre-existing, non-gating VUID 08740/08742 diagnostics for unavailable NV sphere/LSS capabilities;
+  all selected tests passed.
+- **Artifacts/logs:** Vulkan JUnit `/tmp/falcor2-phase4/linux-vulkan.xml`, 3,191 bytes, SHA-256
+  `54856989051f61932584d2d2ccf4edb8c7a5396c15039f7254beaffb305bf8b6`; UI JUnit
+  `/tmp/falcor2-phase4/linux-vulkan-ui.xml`, 712 bytes, SHA-256
+  `67e0dc6a9d6c781ca0345e2266ba9e4b7e3b2f46fa9993a09412ac4da79d3344`; CUDA JUnit
+  `/tmp/falcor2-phase4/linux-cuda.xml`, 1,133 bytes, SHA-256
+  `a85f7eb40c22d3979d638f7ecfbe3a5fb47862ba8979f375953a73eb9ff5ed43`. The clean-working-
+  directory depth-1 legacy/structural PNG pair is byte-identical with SHA-256
+  `f814d20be00b53ca8d26f949a36996062a74a5ee6612bf4d366240de528adde3`. The richer depth-3,
+  64-frame captures at `output/phase4/reference-legacy.png` and
+  `output/phase4/reference-structural.png` were requested at 320x240, have actual PNG dimensions
+  238x154, and are byte-identical with SHA-256
+  `6b222382afca4ccd1787ebb9e6874dd013342dd9f27306ce6d1546c862c61123`.
+  SlangPy configuration JUnit `/tmp/falcor2-phase4/linux-slangpy-config.xml`: 2,418 bytes, SHA-256
+  `5a50955059ab90af69180e9c192cba7b8ea53c59fea9b90b58957d918bb4e522`; generated-raygen/reload
+  JUnit `/tmp/falcor2-phase4/linux-slangpy-structural.xml`: 378 bytes, SHA-256
+  `069092a32b835a933b67748bffbfe3764e8952db429aa80c672f91b327cef339`.
+  Windows evidence is preserved at
+  `/home/zhangkai/.codex/local-build-farm/runs/falcor2-structural-rt-phase4-windows-resume/20260903-phase4-windows-resume`;
+  `windows.log` has SHA-256
+  `9275c19d4982be8df86ff344068d05a751e5d001a38a2b5a4b46bef503bf4e2f`. Its D3D12/Vulkan
+  ReferencePathTracer JUnit hashes are
+  `f438aeacce4f0f317d34d00c5e4c5cb4093fc2bdcd9a2c30ed23db782e802953` and
+  `0d18ce5bc582f6a226b6794e00c666948815a112870f69d3cd78fc2bf1f6bbab`; D3D12/Vulkan Phase 3 UI
+  hashes are `ebe785d5f482e08b8f2b1966da56d126936f30e41276bedf6c491a7ea0e5cea6` and
+  `f46da1f96a9bc30dca49c551a524ee34695d57d26830d0a5a1133c1cda27e2e1`. The Falcor config/sample,
+  SlangPy config, and D3D12/Vulkan SlangPy structural JUnit hashes are respectively
+  `5229caeb9c8595863a9e2af37b231474e8846335b2866b002d31dbad6ebe5133`,
+  `9c0ecaa397a87a462ff62105bfc621cbd147371b455279642ee5a97f562da78c`,
+  `7c7cac6a82823bf4972291bee1ed0701b7c4a4e8957d59f6ff8907e4acbe411a`, and
+  `1278aa74a4158dec355cbfa29eb3d6c05329269e6529871b970eb68fb3566cce`.
+  macOS evidence is preserved at
+  `/home/zhangkai/.codex/local-build-farm/runs/falcor2-structural-rt-phase4-macos-resume/20260903-122722`;
+  the hash manifest has SHA-256
+  `ac7ba68498b0b45fe0bc9523d67a60d2c5da796d067b8d3a153b9b8393c39366`, the layout JSON
+  `987c6e8e182f7851c80e76b65173ef22ccf56dfd538ad45f7c9b3bad91e02343`, and the three AIR outputs
+  `d5871a82b0398776ecf961696e659743add8458f805a79aadeea79c9d1a99e51`,
+  `bc286d0b499923cbfae9134601edbd15fd5868540fb99d7b64ed4ed03000d32a`, and
+  `7f70315d8148aa8aa6d6250b6d0bc699513d99d719aec0a47a992686f22c8efd`.
+- **Loaded-library identity:** `/proc/self/maps` after import resolves compiler
+  `another-slang-rt-recovery/build/Release/lib/libslang-compiler.so.0.2026.16` at SHA-256
+  `de654873133a2c6736554edd023ebb648a0eed9bfe2964e12e1fb24da35abc9e`, integrated
+  `build/linux-clang-structural/Release/libsgl.so` at SHA-256
+  `ce676d12fc6f241655b6a9be9e3cf7682a02e9315b589eba8572a09ee69c77b8`, and
+  `build/linux-clang-structural/Release/libfalcor2.so` at SHA-256
+  `57bc225438b5db3c8cf9afd6472f905660c1f537eddbdad8a57556979a6e9a26`. Package paths resolve inside
+  this Falcor/SlangPy checkout. The compiler Git HEAD is
+  authoritative: `slangc -version` prints stale generated metadata `2026.16-95-g49facf2c3`.
+- **Known limitations or follow-up:** Structural SER; structural hardware/procedural LSS;
+  multi-payload physical-pipeline visibility; CUDA ReferencePathTracer runtime without RayQuery;
+  Metal structural RT runtime; non-zero-slot runtime sentinels; and runtime performance benchmarking
+  are deferred. Per-API scene-module cache preservation, canonical generated/base-module conformance
+  composition, and one-time adapter materialization through the cheap structural-requirements query
+  are implemented and validated across the scoped acceptance matrix.
+- **Paired commit/submodule pin:** Slang
+  `0dc2a4df7ae288aebcf2d3e9b2a8779177ccc617`; SlangPy/gitlink
+  `77205c2f3a5313c772d2df6c3cd19600887e938d`; Falcor
+  `12448a57d16a53009973d3ff7b3a31eff2095d74`.
