@@ -39,7 +39,7 @@ in this file.
 - [x] Phase 1 SlangPy/SGL source implementation committed and pushed as
   `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
 - [x] Final SlangPy validation/ExecPlan follow-ups committed and pushed; the Phase 0-1 submodule
-  revision is `3a0454c4e101522d323bf8545d251d99abf9d901`.
+  revision is `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
 - [x] Native build and Phase 0-1 runtime validation completed on 2026-09-03.
   - Structural Slang planning baseline: `2026.16-90-gb0f010593` from the original local checkout.
   - SlangPy capped Debug build: 392/392 steps passed on Linux.
@@ -112,8 +112,9 @@ follow-ups. The checklist sections below track their containment and eventual re
 - [x] Update Falcor `.gitmodules` to the writable SlangPy fork.
 - [x] Commit and push SlangPy source changes before updating the Falcor submodule pointer.
   - Implementation commit: `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
-  - Final Phase 0-1 submodule revision: `3a0454c4e101522d323bf8545d251d99abf9d901`.
-- [ ] Record both commit hashes together in the change ledger.
+  - Final Phase 0-1 submodule revision: `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
+- [x] Record the Slang compiler, SlangPy implementation/final gitlink, and Falcor publication
+  commits together in the change ledger.
 - [ ] Verify a fresh recursive clone resolves the exact SlangPy commit without local-only state.
 - [x] Enable Slang's experimental features only in the Phase 1 structural SlangPy test session.
 - [ ] Enable Slang's experimental features in affected Falcor device/session creation paths when
@@ -735,4 +736,48 @@ For every implementation commit, append one entry in chronological order with al
 - **Platforms/backends:** Documentation-only.
 - **Artifacts/logs:** The Phase 0-1 acceptance entry above.
 - **Known limitations or follow-up:** Falcor renderer porting begins in Phase 2.
+- **Paired commit/submodule pin:** Superseded as the final pin by `aa8840bc...` below.
+
+### SlangPy ExecPlan-closure entry - 2026-09-03
+
+- **Repository:** `kaizhangNV/slangpy`
+- **Branch:** `codex/structural-rt-host-bridge`
+- **Commit:** `aa8840bc8ca644c45ea9d475f3f937b66faf8208`
+- **Intent:** Close the final living-ExecPlan progress item after the initial Falcor publication.
+- **Files changed:** `.agents/execplans/structural-rt-host-bridge.md`.
+- **Public API/ABI change:** None.
+- **Shader/SBT behavior change:** None.
+- **Legacy compatibility impact:** None.
+- **Tests run:** `pre-commit run --all-files`, `pyright` (0 errors), and `git diff --check`.
+- **Platforms/backends:** Documentation-only.
+- **Artifacts/logs:** Initial Falcor publication commit `7a37064f0aa04b7863152c4f4954be3ba8df00ff`.
+- **Known limitations or follow-up:** Falcor renderer porting begins in Phase 2.
 - **Paired commit/submodule pin:** This is the final Phase 0-1 SlangPy gitlink recorded by Falcor.
+
+### Falcor Phase 0-1 publication entry - 2026-09-03
+
+- **Repository:** `kaizhangNV/falcor2`
+- **Branch:** `codex/structural-rt-port`
+- **Commit:** `7a37064f0aa04b7863152c4f4954be3ba8df00ff`
+- **Intent:** Publish the Phase 0-1 plan and complete change/validation ledger, point the SlangPy
+  submodule URL at the writable fork, and pin the validated host bridge without modifying Falcor
+  renderer source.
+- **Files changed:**
+  - `.gitmodules`
+  - `external/slangpy` (gitlink)
+  - `reports/structural-rt-port-plan.md`
+  - `reports/structural-rt-port-checklist.md`
+- **Public API/ABI change:** No Falcor API/ABI change. The pinned SlangPy submodule contains the
+  additive bridge described in its implementation entry.
+- **Shader/SBT behavior change:** No Falcor shader behavior change. The pinned bridge can adapt one
+  reflected structural layout into existing RHI pipeline/SBT descriptors.
+- **Legacy compatibility impact:** No Falcor runtime path changed; legacy and structural SlangPy
+  canaries pass in the acceptance matrix.
+- **Tests run:** The Phase 0-1 acceptance matrix above; `git diff --cached --check` before commit.
+- **Platforms/backends:** Linux Vulkan/CUDA, Windows D3D12/Vulkan/CUDA, and macOS compiler-only
+  Metal coverage.
+- **Artifacts/logs:** The Phase 0-1 acceptance entry above and both checked-in Markdown reports.
+- **Known limitations or follow-up:** Renderer source porting starts with MiniTracer in Phase 2.
+- **Paired commit/submodule pin:** Initial publication pinned SlangPy `3a0454c4...`; the subsequent
+  report/gitlink-only outer commit advances it to final ExecPlan revision `aa8840bc...`. Both use
+  Slang `b035d437...` as the validated compiler dependency.

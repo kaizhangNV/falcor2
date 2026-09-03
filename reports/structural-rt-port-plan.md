@@ -168,8 +168,9 @@ The SGL/SlangPy implementation lives in the `external/slangpy` submodule on bran
 published as `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`. Validation documentation and a formatting-only
 native-test normalization are in `28ee791bc4cb58b071e4d6c873b214dbc2d6a98c`; reproducible command
 details were completed by `07aefdac0d3a729d1fcf1271232843409708a4b7` and
-`3a0454c4e101522d323bf8545d251d99abf9d901`. The latter is the Falcor submodule revision for
-Phase 0-1.
+`3a0454c4e101522d323bf8545d251d99abf9d901`. Commit
+`aa8840bc8ca644c45ea9d475f3f937b66faf8208` closes the ExecPlan after the first Falcor publication;
+it is the final Falcor submodule revision for Phase 0-1.
 
 SlangPy's repository instructions require a living ExecPlan for this feature. It is maintained at
 `external/slangpy/.agents/execplans/structural-rt-host-bridge.md`; final commits, runner evidence,
