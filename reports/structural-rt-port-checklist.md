@@ -40,6 +40,8 @@ in this file.
   `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
 - [x] Final SlangPy validation/ExecPlan follow-ups committed and pushed; the Phase 0-1 submodule
   revision is `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
+- [x] Falcor Phase 0-1 integration, final gitlink, and main report update published through
+  `af526615e77f4e59dc1169e5cff48101f0fa27fe`.
 - [x] Native build and Phase 0-1 runtime validation completed on 2026-09-03.
   - Structural Slang planning baseline: `2026.16-90-gb0f010593` from the original local checkout.
   - SlangPy capped Debug build: 392/392 steps passed on Linux.
@@ -115,7 +117,9 @@ follow-ups. The checklist sections below track their containment and eventual re
   - Final Phase 0-1 submodule revision: `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
 - [x] Record the Slang compiler, SlangPy implementation/final gitlink, and Falcor publication
   commits together in the change ledger.
-- [ ] Verify a fresh recursive clone resolves the exact SlangPy commit without local-only state.
+- [x] Verify from a fresh detached clone of Falcor publication `af526615...` that recursive SlangPy
+  initialization resolves the fork URL and exact final gitlink `aa8840bc...`, including every nested
+  SlangPy submodule, with clean outer and SlangPy worktrees.
 - [x] Enable Slang's experimental features only in the Phase 1 structural SlangPy test session.
 - [ ] Enable Slang's experimental features in affected Falcor device/session creation paths when
   the first renderer is ported; no Falcor renderer source changes in Phase 0-1.
@@ -406,7 +410,8 @@ SlangPy and is tracked in the SlangPy test section above.
   passes on D3D12/Vulkan/CUDA. A separate bounded local Linux run also passed Vulkan RayQuery and
   Vulkan/CUDA pipeline launch with the same CUDA RayQuery skip.
 - [x] Inspect `git diff --check` in the Slang and SlangPy source commits.
-- [ ] Confirm both worktrees are clean after commits.
+- [x] Confirm the Slang compiler and SlangPy worktrees are clean at their final revisions, and the
+  Falcor worktree is clean at published commit `af526615...` before this evidence-only report update.
 
 ### Cross-platform checks
 
@@ -779,5 +784,47 @@ For every implementation commit, append one entry in chronological order with al
 - **Artifacts/logs:** The Phase 0-1 acceptance entry above and both checked-in Markdown reports.
 - **Known limitations or follow-up:** Renderer source porting starts with MiniTracer in Phase 2.
 - **Paired commit/submodule pin:** Initial publication pinned SlangPy `3a0454c4...`; the subsequent
-  report/gitlink-only outer commit advances it to final ExecPlan revision `aa8840bc...`. Both use
-  Slang `b035d437...` as the validated compiler dependency.
+  report/gitlink-only outer commit `af526615e77f4e59dc1169e5cff48101f0fa27fe` advances it to final
+  ExecPlan revision `aa8840bc...`. Both use Slang `b035d437...` as the validated compiler dependency.
+
+### Falcor final-gitlink/report entry - 2026-09-03
+
+- **Repository:** `kaizhangNV/falcor2`
+- **Branch:** `codex/structural-rt-port`
+- **Commit:** `af526615e77f4e59dc1169e5cff48101f0fa27fe`
+- **Intent:** Advance the SlangPy gitlink to the closed ExecPlan revision and add final
+  cross-platform results, exact validation commands/log hashes, and the cross-repository commit
+  ledger to both Markdown reports.
+- **Files changed:**
+  - `external/slangpy` (gitlink)
+  - `reports/structural-rt-port-plan.md`
+  - `reports/structural-rt-port-checklist.md`
+- **Public API/ABI change:** None beyond the already published SlangPy submodule implementation.
+- **Shader/SBT behavior change:** None; this advances documentation around the same validated bridge.
+- **Legacy compatibility impact:** None.
+- **Tests run:** `git diff --cached --check`; the final worker matrix was already complete and is
+  recorded in the acceptance entry.
+- **Platforms/backends:** Records Linux Vulkan/CUDA, Windows D3D12/Vulkan/CUDA, and macOS
+  compiler-only Metal evidence.
+- **Artifacts/logs:** The checked-in reports and Phase 0-1 acceptance entry above.
+- **Known limitations or follow-up:** Falcor renderer porting begins in Phase 2.
+- **Paired commit/submodule pin:** SlangPy `aa8840bc8ca644c45ea9d475f3f937b66faf8208` and
+  compiler `b035d437be74e1ffb6c671c4e6630f07326e300b`.
+
+### Fresh-clone publication verification - 2026-09-03
+
+- **Repository/commit:** `kaizhangNV/falcor2` at
+  `af526615e77f4e59dc1169e5cff48101f0fa27fe`.
+- **Command shape:** Clone branch `codex/structural-rt-port` with `--filter=blob:none --no-checkout`,
+  detach at the full outer SHA, then run
+  `git submodule update --init --recursive --depth 1 external/slangpy`.
+- **Verified URL:** `https://github.com/kaizhangNV/slangpy.git` from the fresh clone's
+  `.gitmodules`.
+- **Verified gitlink and checkout:** Falcor's tree object and `external/slangpy` both resolved
+  `aa8840bc8ca644c45ea9d475f3f937b66faf8208`.
+- **Nested state:** SlangPy's data, samples, fmt, glfw, nanobind (including robin-map), nanothread
+  (including cmake-defaults), slang-rhi, tevclient, and vcpkg submodules all initialized at their
+  pinned revisions.
+- **Cleanliness:** `git status --short` produced no output in either the fresh Falcor checkout or
+  its SlangPy submodule. The disposable verification checkout is preserved at
+  `/tmp/falcor2-phase01-verify.krJq9q/repo` for local inspection.
