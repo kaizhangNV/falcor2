@@ -32,6 +32,32 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
             D(SceneRayTracingSetup, Options, skip_unused_geometry_types)
         );
 
+    nb::class_<SceneRayTracingSetup::StructuralRequirements>(
+        setup,
+        "StructuralRequirements",
+        D_NA(SceneRayTracingSetup, StructuralRequirements)
+    )
+        .def_ro(
+            "min_hit_group_count",
+            &SceneRayTracingSetup::StructuralRequirements::min_hit_group_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, min_hit_group_count)
+        )
+        .def_ro(
+            "min_miss_count",
+            &SceneRayTracingSetup::StructuralRequirements::min_miss_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, min_miss_count)
+        )
+        .def_ro(
+            "min_callable_count",
+            &SceneRayTracingSetup::StructuralRequirements::min_callable_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, min_callable_count)
+        )
+        .def_ro(
+            "pipeline_flags",
+            &SceneRayTracingSetup::StructuralRequirements::pipeline_flags,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, pipeline_flags)
+        );
+
     nb::class_<SceneRayTracingSetup::RayDesc>(setup, "RayDesc", D(SceneRayTracingSetup, RayDesc))
         .def(nb::init<>())
         .def_rw("name", &SceneRayTracingSetup::RayDesc::name, D(SceneRayTracingSetup, RayDesc, name))
@@ -86,6 +112,12 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
             "ray_descs"_a,
             "options"_a.none() = nb::none(),
             D(SceneRayTracingSetup, create)
+        )
+        .def_static(
+            "get_structural_requirements",
+            &SceneRayTracingSetup::get_structural_requirements,
+            "scene"_a,
+            D_NA(SceneRayTracingSetup, get_structural_requirements)
         )
         .def_static(
             "create_structural",

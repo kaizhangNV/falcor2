@@ -51,6 +51,15 @@ struct FALCOR_API SceneRayTracingSetup {
         bool skip_unused_geometry_types{true};
     };
 
+    /// Scene-derived sizing and flags needed to configure a structural ray-tracing call.
+    /// Querying this value does not reflect or materialize structural shader stages.
+    struct StructuralRequirements {
+        uint32_t min_hit_group_count{0};
+        uint32_t min_miss_count{0};
+        uint32_t min_callable_count{0};
+        sgl::RayTracingPipelineFlags pipeline_flags{sgl::RayTracingPipelineFlags::none};
+    };
+
     /// Description of a single ray type.
     /// This describes ray types defined with the helper macros found in scene_ray_tracing.slangh.
     struct RayDesc {
@@ -111,6 +120,10 @@ struct FALCOR_API SceneRayTracingSetup {
     {
         return create(scene, std::span<const PerGeometryTypeRayDesc>(ray_descs.begin(), ray_descs.size()), options);
     }
+
+    /// Return the scene policy requirements for a structural ray-tracing call.
+    /// This validates the currently supported policy and geometry types without materializing stages.
+    static StructuralRequirements get_structural_requirements(const Scene* scene);
 
     /// Create a ray tracing setup from a reflected structural trace-program layout.
     /// Empty reflected slots are padded to the scene's hit-group policy. Structural LSS layouts

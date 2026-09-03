@@ -3,8 +3,6 @@
 
 module reference;
 
-#include "falcor2/render/scene_ray_tracing.slangh"
-
 // TODO(scene) needed to get access to render types for type conformances (i.e. ILight)
 __exported import falcor2.render;
 import falcor2.utils;
@@ -29,11 +27,11 @@ extern static const bool ENV_MAP_AS_BACKGROUND = true;
 extern static const float3 BACKGROUND_COLOR = float3(0.0, 0.0, 0.0);
 /// Maximum path depth.
 // (1 = directly visible emission, 2 = direct lighting, 3 = one indirect bounce, etc.)
-extern static const uint MAX_DEPTH = 3;
+public extern static const uint MAX_DEPTH = 3;
 /// Path scheduling implementation.
-extern static const SchedulingMode SCHEDULING_MODE = SchedulingMode::simple;
+public extern static const SchedulingMode SCHEDULING_MODE = SchedulingMode::simple;
 /// Visibility traversal implementation.
-extern static const VisibilityRayMode VISIBILITY_RAY_MODE = VisibilityRayMode::ray_query;
+public extern static const VisibilityRayMode VISIBILITY_RAY_MODE = VisibilityRayMode::ray_query;
 
 static LightSampler<ENABLE_ANALYTIC_LIGHTS, ENABLE_ENVIRONMENT_LIGHT, ENABLE_EMISSIVE_TRIANGLES> light_sampler;
 
@@ -583,17 +581,22 @@ public struct PathPayload
         : write(caller, closesthit, miss);
 };
 
+public void handle_scatter_miss(inout PathPayload payload)
+{
+    handle_miss(payload.path);
+}
+
 [raypayload]
 public struct VisibilityPayload
 {
-    bool visible : read(caller)
+    public bool visible : read(caller)
         : write(anyhit, miss);
 
-    __init() { visible = false; }
+    public __init() { visible = false; }
 };
 
-static const uint SCATTER_RAY_INDEX = 0;
-static const uint VISIBILITY_RAY_INDEX = 1;
+public static const uint SCATTER_RAY_INDEX = 0;
+public static const uint VISIBILITY_RAY_INDEX = 1;
 
 public struct InlineVisibilityQuery : IVisibilityQuery
 {
@@ -604,138 +607,51 @@ public struct InlineVisibilityQuery : IVisibilityQuery
     }
 };
 
-public struct TraceRayVisibilityQuery : IVisibilityQuery
-{
-    public bool is_occluded(Ray ray)
-    {
-        VisibilityPayload payload = {};
-        TraceRay(
-            g_scene.tlas,
-            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-            0xff,
-            VISIBILITY_RAY_INDEX,
-            0 /* MultiplierForGeometryContributionHitGroupIndex */,
-            VISIBILITY_RAY_INDEX,
-            ray.to_ray_desc(),
-            payload
-        );
-        return !payload.visible;
-    }
-};
-
-void handle_scatter_hit<D : IDeferredHitInfo>(inout PathPayload payload, D deferred_hit)
+public void handle_scatter_hit<VisibilityQuery : IVisibilityQuery>(
+    VisibilityQuery visibility_query,
+    inout PathPayload payload,
+    no_diff HitInfo hit
+)
 {
     if (payload.path.vertex_index == 0)
         payload.path.vertex_index = 1;
 
-    if (VISIBILITY_RAY_MODE == VisibilityRayMode::ray_query) {
-        InlineVisibilityQuery visibility_query;
-        handle_hit(visibility_query, deferred_hit.create(), payload.path, g_trace_path_context);
-    } else if (VISIBILITY_RAY_MODE == VisibilityRayMode::trace_ray) {
-        TraceRayVisibilityQuery visibility_query;
-        handle_hit(visibility_query, deferred_hit.create(), payload.path, g_trace_path_context);
-    }
+    handle_hit(visibility_query, hit, payload.path, g_trace_path_context);
 }
 
-SCENE_RAY_TYPE_MISS(scatter, scatter_miss, PathPayload);
-void scatter_miss(inout PathPayload payload)
+public interface IScatterTracer
 {
-    handle_miss(payload.path);
+    void trace(no_diff Ray ray, inout PathPayload payload);
 }
 
-SCENE_RAY_TYPE_CLOSEST_HIT(scatter, scatter_closest_hit, PathPayload);
-void scatter_closest_hit<D : IDeferredHitInfo>(inout PathPayload payload, D deferred_hit)
+public interface IPathScheduler
 {
-    handle_scatter_hit(payload, deferred_hit);
+    float3 trace_path(no_diff Ray ray, no_diff uint path_id, no_diff UniformSampleGenerator sg);
 }
 
-SCENE_RAY_TYPE_MISS(visibility, visibility_miss, VisibilityPayload);
-void visibility_miss(inout VisibilityPayload payload)
-{
-    payload.visible = true;
-}
-
-SCENE_RAY_TYPE_ANY_HIT(visibility, visibility_any_hit, VisibilityPayload);
-void visibility_any_hit<D : IDeferredHitInfo>(inout VisibilityPayload payload, D deferred_hit)
-{
-    Ray ray = Ray(WorldRayOrigin(), WorldRayDirection(), RayTMin(), RayTCurrent());
-    HitInfo hit = deferred_hit.create();
-    if (OpacityEvaluator::is_valid_hit(ray, hit))
-        AcceptHitAndEndSearch();
-    else
-        IgnoreHit();
-}
-
-public struct SimpleScheduler
+/// Non-SER path scheduler shared by the legacy and structural scatter tracers.
+public struct SimpleScheduler<ScatterTracer : IScatterTracer> : IPathScheduler
 {
     public float3 trace_path(no_diff Ray ray, no_diff uint path_id, no_diff UniformSampleGenerator sg)
     {
         PathPayload payload;
         payload.path = PathState(sg, path_id, ray);
+        ScatterTracer tracer;
 
         [MaxIters(MAX_DEPTH + 1)]
         while (payload.path.is_active()) {
             ray = Ray(payload.path.ray_origin_ws, payload.path.ray_dir_ws);
-            TraceRay(
-                g_scene.tlas,
-                0,
-                0xff,
-                SCATTER_RAY_INDEX,
-                0 /* MultiplierForGeometryContributionHitGroupIndex */,
-                SCATTER_RAY_INDEX,
-                ray.to_ray_desc(),
-                payload
-            );
+            tracer.trace(ray, payload);
         }
         return payload.path.radiance;
     }
 };
 
-public struct ReorderingScheduler
+public float3
+trace_path<Scheduler : IPathScheduler>(no_diff Ray ray, no_diff uint path_id, no_diff UniformSampleGenerator sg)
 {
-    public float3 trace_path(no_diff Ray ray, no_diff uint path_id, no_diff UniformSampleGenerator sg)
-    {
-        PathPayload payload;
-        payload.path = PathState(sg, path_id, ray);
-
-        [MaxIters(MAX_DEPTH + 1)]
-        while (payload.path.is_active()) {
-            ray = Ray(payload.path.ray_origin_ws, payload.path.ray_dir_ws);
-            HitObject hit_object = HitObject::TraceRay(
-                g_scene.tlas,
-                0,
-                0xff,
-                SCATTER_RAY_INDEX,
-                0 /* MultiplierForGeometryContributionHitGroupIndex */,
-                SCATTER_RAY_INDEX,
-                ray.to_ray_desc(),
-                payload
-            );
-
-            uint coherence_hint = 0;
-            if (hit_object.IsHit()) {
-                GeometryInstanceID geometry_instance_id
-                    = GeometryInstanceID(hit_object.GetInstanceID() + hit_object.GetGeometryIndex());
-                coherence_hint = uint(g_scene.get_geometry_instance_desc(geometry_instance_id).header.material_id);
-            }
-            ReorderThread(hit_object, coherence_hint, 16);
-            HitObject::Invoke(g_scene.tlas, hit_object, payload);
-        }
-        return payload.path.radiance;
-    }
-};
-
-public float3 trace_path(no_diff Ray ray, no_diff uint path_id, no_diff UniformSampleGenerator sg)
-{
-    if (SCHEDULING_MODE == SchedulingMode::simple) {
-        SimpleScheduler scheduler;
-        return scheduler.trace_path(ray, path_id, sg);
-    } else if (SCHEDULING_MODE == SchedulingMode::ser) {
-        ReorderingScheduler scheduler;
-        return scheduler.trace_path(ray, path_id, sg);
-    } else {
-        return float3(0.0, 0.0, 0.0);
-    }
+    Scheduler scheduler;
+    return scheduler.trace_path(ray, path_id, sg);
 }
 
 // Calculate primary ray UV coordinates.
@@ -854,7 +770,7 @@ void write_primary_surface_interaction(
     }
 }
 
-public void render(
+public void render<Scheduler : IPathScheduler>(
     RaySampler ray_sampler,
     Camera previous_camera,
     out float4 output,
@@ -870,7 +786,7 @@ public void render(
     Ray ray = ray_sampler.camera.get_ray(uv);
 
     uint path_id = id.y * ray_sampler.camera.dims.x + id.x;
-    float3 radiance = trace_path(ray, path_id, sg);
+    float3 radiance = trace_path<Scheduler>(ray, path_id, sg);
 
     output = float4(radiance, 1.0);
 }

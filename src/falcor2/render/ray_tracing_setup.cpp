@@ -212,18 +212,10 @@ SceneRayTracingSetup SceneRayTracingSetup::create(
     return result;
 }
 
-SceneRayTracingSetup SceneRayTracingSetup::create_structural(
-    const Scene* scene,
-    sgl::SlangModule* module,
-    std::string_view layout_name,
-    std::optional<Options> options_
-)
+SceneRayTracingSetup::StructuralRequirements SceneRayTracingSetup::get_structural_requirements(const Scene* scene)
 {
     FALCOR_CHECK_NOT_NULL(scene);
-    FALCOR_CHECK_NOT_NULL(module);
-    FALCOR_CHECK(!layout_name.empty(), "layout_name must not be empty.");
 
-    Options options = options_.value_or(Options{});
     const HitGroupPolicy& policy = scene->hit_group_policy();
     FALCOR_CHECK(policy.mode == HitGroupPolicy::Mode::per_geometry_type, "Only per_geometry_type mode is supported.");
     FALCOR_CHECK(
@@ -231,30 +223,52 @@ SceneRayTracingSetup SceneRayTracingSetup::create_structural(
         "Structural SceneRayTracingSetup does not support LSS geometry yet."
     );
 
-    const uint32_t hit_group_count = policy.geometry_type_count * policy.ray_type_count;
+    return {
+        .min_hit_group_count = policy.geometry_type_count * policy.ray_type_count,
+        .min_miss_count = policy.ray_type_count,
+        .min_callable_count = 0,
+        .pipeline_flags = sgl::RayTracingPipelineFlags::none,
+    };
+}
+
+SceneRayTracingSetup SceneRayTracingSetup::create_structural(
+    const Scene* scene,
+    sgl::SlangModule* module,
+    std::string_view layout_name,
+    std::optional<Options> options_
+)
+{
+    FALCOR_CHECK_NOT_NULL(module);
+    FALCOR_CHECK(!layout_name.empty(), "layout_name must not be empty.");
+
+    const StructuralRequirements requirements = get_structural_requirements(scene);
+    Options options = options_.value_or(Options{});
+    const HitGroupPolicy& policy = scene->hit_group_policy();
+
     sgl::StructuralRayTracingBindings bindings = sgl::create_structural_ray_tracing_bindings(
         module,
         layout_name,
         {
-            .min_hit_group_count = hit_group_count,
-            .min_miss_count = policy.ray_type_count,
+            .min_hit_group_count = requirements.min_hit_group_count,
+            .min_miss_count = requirements.min_miss_count,
+            .min_callable_count = requirements.min_callable_count,
         }
     );
 
     FALCOR_CHECK(
-        bindings.hit_group_names.size() == hit_group_count,
+        bindings.hit_group_names.size() == requirements.min_hit_group_count,
         "Structural layout '{}' declares hit-group slots outside the scene policy ({} slots).",
         layout_name,
-        hit_group_count
+        requirements.min_hit_group_count
     );
     FALCOR_CHECK(
-        bindings.miss_entry_points.size() == policy.ray_type_count,
+        bindings.miss_entry_points.size() == requirements.min_miss_count,
         "Structural layout '{}' declares miss slots outside the scene policy ({} slots).",
         layout_name,
-        policy.ray_type_count
+        requirements.min_miss_count
     );
     FALCOR_CHECK(
-        bindings.callable_entry_points.empty(),
+        bindings.callable_entry_points.size() == requirements.min_callable_count,
         "Structural layout '{}' declares callable groups, which SceneRayTracingSetup does not support yet.",
         layout_name
     );
@@ -263,6 +277,7 @@ SceneRayTracingSetup SceneRayTracingSetup::create_structural(
     result.hit_groups = std::move(bindings.hit_groups);
     result.sbt_hit_group_names = std::move(bindings.hit_group_names);
     result.sbt_miss_entry_points = std::move(bindings.miss_entry_points);
+    result.pipeline_flags = requirements.pipeline_flags;
     result.m_materialized_entry_points = std::move(bindings.entry_points);
 
     result.entry_points.reserve(result.m_materialized_entry_points.size());
@@ -288,7 +303,7 @@ SceneRayTracingSetup SceneRayTracingSetup::create_structural(
         dummy_hit_group_name = fmt::format("{}_{}", DUMMY_HIT_GROUP_NAME, suffix);
 
     bool needs_dummy_hit_group = false;
-    for (uint32_t slot = 0; slot < hit_group_count; ++slot) {
+    for (uint32_t slot = 0; slot < requirements.min_hit_group_count; ++slot) {
         const uint32_t geometry_type_index = slot / policy.ray_type_count;
         const bool geometry_type_unused = geometry_type_index >= policy.geometry_type_count
             || !scene->has_geometry_type(static_cast<shared::GeometryType>(geometry_type_index));

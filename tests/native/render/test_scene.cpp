@@ -86,6 +86,18 @@ TEST_CASE_GPU("ray tracing setup rejects more than three ray types")
     CHECK_THROWS(SceneRayTracingSetup::create(scene.get(), ray_descs));
 }
 
+TEST_CASE_GPU("structural ray tracing requirements reflect the scene policy")
+{
+    auto scene = Scene::create(ref(ctx.device));
+    SceneRayTracingSetup::StructuralRequirements requirements
+        = SceneRayTracingSetup::get_structural_requirements(scene.get());
+
+    CHECK_EQ(requirements.min_hit_group_count, 6);
+    CHECK_EQ(requirements.min_miss_count, 3);
+    CHECK_EQ(requirements.min_callable_count, 0);
+    CHECK_EQ(requirements.pipeline_flags, sgl::RayTracingPipelineFlags::none);
+}
+
 TEST_CASE_GPU("named refcounted scene globals garbage collection")
 {
     auto scene = Scene::create(ref(ctx.device));

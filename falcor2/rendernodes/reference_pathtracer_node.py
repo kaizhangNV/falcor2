@@ -3,6 +3,7 @@
 
 """Reference path-tracer render node and guide-output management."""
 
+import warnings
 from enum import IntEnum
 from typing import Any, Optional
 
@@ -20,6 +21,9 @@ from falcor2.rendergraph import (
 from falcor2.editor.scene_shader import SceneShaderHelper
 
 REFERENCE_MODULE_PATH = "falcor2/rendernodes/reference_pathtracer.slang"
+REFERENCE_LEGACY_MODULE_NAME = "falcor2.rendernodes.reference_pathtracer_legacy"
+REFERENCE_STRUCTURAL_MODULE_NAME = "falcor2.rendernodes.reference_pathtracer_structural"
+SCATTER_PROGRAM_LAYOUT = "ScatterProgramLayout"
 WRITE_GUIDE_INTERFACE = "IWriteGuide"
 
 
@@ -42,8 +46,13 @@ class ReferencePathTracerNode(RenderNode):
         """Create a reference path tracer node and reflect its guide outputs."""
         super().__init__()
         self._device = device
-        self._scene_shader = SceneShaderHelper(device)
+        self._scene_shaders = {
+            f2.RayTracingPipelineAPI.legacy: SceneShaderHelper(device),
+            f2.RayTracingPipelineAPI.structural: SceneShaderHelper(device),
+        }
         self._pathtracer_module = spy.Module.load_from_file(self._device, REFERENCE_MODULE_PATH)
+        self._legacy_module = None
+        self._structural_module = None
         self._output_spec = ContainerSpec.auto()
         self._module = None
         self._prelude = OutputPrelude.create(self._pathtracer_module, WRITE_GUIDE_INTERFACE)
@@ -65,6 +74,7 @@ class ReferencePathTracerNode(RenderNode):
         self._enable_emissive_triangles = True
         self._env_map_as_background = True
         self._background_color = float3(0.0, 0.0, 0.0)
+        self._ray_tracing_pipeline_api = f2.RayTracingPipelineAPI.legacy
         self._scheduling_mode = SchedulingMode.simple
         self._visibility_ray_mode = (
             VisibilityRayMode.ray_query
@@ -210,6 +220,58 @@ class ReferencePathTracerNode(RenderNode):
         self.settings_changed()
 
     @property
+    def ray_tracing_pipeline_api(self) -> f2.RayTracingPipelineAPI:
+        """Ray-tracing API used for the scatter pipeline."""
+        return self._ray_tracing_pipeline_api
+
+    @ray_tracing_pipeline_api.setter
+    def ray_tracing_pipeline_api(self, value: f2.RayTracingPipelineAPI | str):
+        """Select the legacy or structural scatter pipeline implementation."""
+        if isinstance(value, str):
+            choices = {
+                "legacy": f2.RayTracingPipelineAPI.legacy,
+                "structural": f2.RayTracingPipelineAPI.structural,
+            }
+            try:
+                mode = choices[value]
+            except KeyError:
+                raise ValueError(
+                    f"Unknown ray tracing pipeline API '{value}'; choose legacy or structural."
+                ) from None
+        else:
+            try:
+                mode = f2.RayTracingPipelineAPI(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Unknown ray tracing pipeline API {value!r}; choose legacy or structural."
+                ) from None
+
+        if mode == f2.RayTracingPipelineAPI.structural:
+            if not self._device.slang_session.desc.compiler_options.enable_experimental_features:
+                raise RuntimeError(
+                    "Structural ray tracing requires Slang experimental features to be enabled "
+                    "when creating the device."
+                )
+            if not self._device.has_feature(spy.Feature.ray_query):
+                raise RuntimeError(
+                    "Structural ReferencePathTracer currently requires inline RayQuery visibility; "
+                    "this device does not support ray queries."
+                )
+            if self._visibility_ray_mode == VisibilityRayMode.trace_ray:
+                warnings.warn(
+                    "Structural ReferencePathTracer maps trace-ray visibility to inline RayQuery "
+                    "until multi-payload structural pipelines are supported.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                self._visibility_ray_mode = VisibilityRayMode.ray_query
+
+        if mode != self._ray_tracing_pipeline_api:
+            self._ray_tracing_pipeline_api = mode
+            self._module = None
+            self.settings_changed()
+
+    @property
     def scheduling_mode(self) -> SchedulingMode:
         """Selected path scheduling implementation."""
         return self._scheduling_mode
@@ -218,10 +280,14 @@ class ReferencePathTracerNode(RenderNode):
     def scheduling_mode(self, value: SchedulingMode):
         """Select the path scheduling implementation."""
         mode = SchedulingMode(value)
-        if mode == SchedulingMode.ser and not self._device.has_feature(
-            spy.Feature.shader_execution_reordering
-        ):
-            raise RuntimeError("SER scheduling is not supported by this device.")
+        if mode == SchedulingMode.ser:
+            warnings.warn(
+                "SchedulingMode.ser is temporarily mapped to SchedulingMode.simple while the "
+                "structural ray-tracing port does not support SER.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            mode = SchedulingMode.simple
         self._scheduling_mode = mode
         self.settings_changed()
 
@@ -234,6 +300,17 @@ class ReferencePathTracerNode(RenderNode):
     def visibility_ray_mode(self, value: VisibilityRayMode):
         """Select the visibility-ray traversal implementation."""
         mode = VisibilityRayMode(value)
+        if (
+            mode == VisibilityRayMode.trace_ray
+            and self._ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural
+        ):
+            warnings.warn(
+                "Structural ReferencePathTracer maps trace-ray visibility to inline RayQuery "
+                "until multi-payload structural pipelines are supported.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            mode = VisibilityRayMode.ray_query
         if mode == VisibilityRayMode.ray_query and not self._device.has_feature(
             spy.Feature.ray_query
         ):
@@ -241,9 +318,9 @@ class ReferencePathTracerNode(RenderNode):
         self._visibility_ray_mode = mode
         self.settings_changed()
 
-    def _bind_scene(self, cursor: Any):
-        """Bind scene resources into the render call cursor."""
-        self._scene_shader.bind_scene(cursor)
+    def _get_scene_shader(self) -> SceneShaderHelper:
+        """Return the scene shader cache for the selected pipeline API."""
+        return self._scene_shaders[self._ray_tracing_pipeline_api]
 
     def _clear_guide_outputs(
         self, command_encoder: CommandEncoder, guide_outputs: dict[str, Any | None]
@@ -255,9 +332,26 @@ class ReferencePathTracerNode(RenderNode):
             spec = self._prelude.specs[name]
             Container.clear(output, clear_value=spec.clear_value, command_encoder=command_encoder)
 
+    def _get_pipeline_module(self) -> Any:
+        """Return the lazily loaded shader companion for the selected pipeline API."""
+        if self._ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural:
+            if self._structural_module is None:
+                self._structural_module = spy.Module(
+                    self._device.load_module(REFERENCE_STRUCTURAL_MODULE_NAME),
+                    link=[self._pathtracer_module],
+                )
+            return self._structural_module
+
+        if self._legacy_module is None:
+            self._legacy_module = spy.Module(
+                self._device.load_module(REFERENCE_LEGACY_MODULE_NAME),
+                link=[self._pathtracer_module],
+            )
+        return self._legacy_module
+
     def _get_module(self, scene: f2.Scene) -> Any:
         """Return the scene-specialized module and invalidate cached dispatch if needed."""
-        module = self._scene_shader.get_module(scene, self._pathtracer_module)
+        module = self._get_scene_shader().get_module(scene, self._get_pipeline_module())
         if module is not self._module:
             self._module = module
             self._render_func = None
@@ -273,40 +367,61 @@ class ReferencePathTracerNode(RenderNode):
         # guide prelude. The prelude signature includes target types, so changing
         # which guides are written invalidates this cached dispatch object.
         render_func_constants = (
+            self._ray_tracing_pipeline_api,
             constants,
             self._prelude.signature(write_guide),
         )
         if self._render_func is None or self._render_func_constants != render_func_constants:
             assert self._scene
 
-            scatter_ray_desc = f2.SceneRayTracingSetup.RayDesc()
-            scatter_ray_desc.name = "scatter"
-            scatter_ray_desc.has_miss = True
-            scatter_ray_desc.has_closest_hit = True
-            ray_descs = [scatter_ray_desc]
+            is_structural = self._ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural
+            if is_structural:
+                structural_requirements = f2.SceneRayTracingSetup.get_structural_requirements(
+                    self._scene
+                )
+                scheduler_name = "StructuralSimpleScheduler"
+            else:
+                scatter_ray_desc = f2.SceneRayTracingSetup.RayDesc()
+                scatter_ray_desc.name = "scatter"
+                scatter_ray_desc.has_miss = True
+                scatter_ray_desc.has_closest_hit = True
+                ray_descs = [scatter_ray_desc]
 
-            if self._visibility_ray_mode == VisibilityRayMode.trace_ray:
-                visibility_ray_desc = f2.SceneRayTracingSetup.RayDesc()
-                visibility_ray_desc.name = "visibility"
-                visibility_ray_desc.has_miss = True
-                visibility_ray_desc.has_any_hit = True
-                ray_descs.append(visibility_ray_desc)
+                if self._visibility_ray_mode == VisibilityRayMode.trace_ray:
+                    visibility_ray_desc = f2.SceneRayTracingSetup.RayDesc()
+                    visibility_ray_desc.name = "visibility"
+                    visibility_ray_desc.has_miss = True
+                    visibility_ray_desc.has_any_hit = True
+                    ray_descs.append(visibility_ray_desc)
 
-            rt_setup = f2.SceneRayTracingSetup.create(
-                self._scene,
-                ray_descs,
-            )
+                rt_setup = f2.SceneRayTracingSetup.create(
+                    self._scene,
+                    ray_descs,
+                )
+                scheduler_name = "LegacySimpleScheduler"
 
             # Generate a prelude that implements IWriteGuide for the requested guide
             # targets, then attach scene binding and ray tracing dispatch metadata.
-            render_func = module.render.constants(constants).prelude(
-                self._prelude.generate(write_guide)
+            render_func = (
+                module.require_function(f"render<{scheduler_name}>")
+                .constants(constants)
+                .prelude(self._prelude.generate(write_guide))
+                .type_conformances(self._scene.requirements.type_conformances)
+                .write(self._get_scene_shader().bind_scene)
             )
 
-            self._render_func = (
-                render_func.type_conformances(self._scene.requirements.type_conformances)
-                .write(self._bind_scene)
-                .ray_tracing(
+            if is_structural:
+                self._render_func = render_func.ray_tracing(
+                    trace_program_layout=SCATTER_PROGRAM_LAYOUT,
+                    min_hit_group_count=structural_requirements.min_hit_group_count,
+                    min_miss_count=structural_requirements.min_miss_count,
+                    min_callable_count=structural_requirements.min_callable_count,
+                    max_recursion=1,
+                    max_ray_payload_size=128,
+                    flags=structural_requirements.pipeline_flags,
+                )
+            else:
+                self._render_func = render_func.ray_tracing(
                     hit_groups=rt_setup.hit_groups,
                     hit_group_names=rt_setup.sbt_hit_group_names,
                     miss_entry_points=rt_setup.sbt_miss_entry_points,
@@ -316,7 +431,6 @@ class ReferencePathTracerNode(RenderNode):
                     max_ray_payload_size=128,
                     flags=rt_setup.pipeline_flags,
                 )
-            )
             self._render_func_constants = render_func_constants
         return self._render_func
 
