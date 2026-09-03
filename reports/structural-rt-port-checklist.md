@@ -497,8 +497,12 @@ For every implementation commit, append one entry in chronological order with al
   stage-input lowering.
 - **Tests run:** Four added PTX FileCheck lanes; portable structural suite and the SlangPy CUDA
   runtime canary.
-- **Platforms/backends:** Linux PTX/CUDA; later final-SHA farm runs cover all Phase 1 platforms.
-- **Artifacts/logs:** Included in the final Linux and Windows farm logs below.
+- **Platforms/backends:** Linux PTX/CUDA. The later final-SHA farm runs independently cover
+  cross-platform compiler builds and SlangPy runtime canaries.
+- **Artifacts/logs:** The focused compiler-test results were observed in the local compiler checkout
+  during implementation but were not saved as a standalone log. The preserved final Linux/Windows
+  farm logs below prove the resulting final SHA builds and passes the CUDA runtime canary; they do
+  not contain the four compiler FileCheck runs.
 - **Known limitations or follow-up:** Procedural `reportHit` and structural `geometryIndex` CUDA
   lowering remain later LSS work.
 - **Paired commit/submodule pin:** Included by final compiler commit `b035d437...` and validated
@@ -527,9 +531,11 @@ For every implementation commit, append one entry in chronological order with al
   names remain stable; explicit export renames survive adapter replacement.
 - **Legacy compatibility impact:** Ordinary legacy entry-point names are unchanged.
 - **Tests run:** Two focused unit tests and 78/78 portable structural target tests.
-- **Platforms/backends:** Direct/portable DXIL, SPIR-V, PTX, and source targets; exercised by the
-  Linux, Windows, and macOS final farm builds.
-- **Artifacts/logs:** Included in the final farm logs below.
+- **Platforms/backends:** Direct/portable DXIL, SPIR-V, PTX, and source targets in the local compiler
+  suite. The later farm runs independently build the final SHA on Linux, Windows, and macOS.
+- **Artifacts/logs:** The 2 focused unit tests and 78/78 portable-target results were observed in the
+  local compiler checkout but were not saved as a standalone log. The preserved farm logs below
+  contain final-SHA compiler builds and SlangPy/Metal acceptance coverage, not that compiler suite.
 - **Known limitations or follow-up:** The physical-name identity does not encode declaring-module
   identity or native stage; same-FQN leaves are rejected by the host and one type reused for several
   native stages remains unsupported.
@@ -600,7 +606,8 @@ For every implementation commit, append one entry in chronological order with al
   tests, Linux final-SHA gate, and macOS ARM64 Release Metal/AIR generation.
 - **Platforms/backends:** Linux compiler tests and macOS ARM64 Metal compilation.
 - **Artifacts/logs:** macOS final run `20260902-185145`; closest-hit AIR 3,312 bytes, miss AIR 3,296
-  bytes, raygen AIR 7,184 bytes.
+  bytes, raygen AIR 7,184 bytes. The focused 1/1 and 18/18 compiler-test console results were
+  observed locally but were not saved as a separate log and are not claimed to be in the farm log.
 - **Known limitations or follow-up:** Metal runtime remains outside Phase 1 because the pinned RHI
   lacks pipeline, shader-table/function-table, and `dispatchRays` support.
 - **Paired commit/submodule pin:** Compiler dependency for SlangPy `c2e73c0b...` and its final
