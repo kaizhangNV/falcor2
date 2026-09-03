@@ -58,6 +58,10 @@ in this file.
     layouts materialize on Apple M4 Metal and compiler-owned stages compile to AIR. The UI suite
     also passes on Windows D3D12, Vulkan, and CUDA; the planned Phase 3 cross-platform gate is
     complete.
+- [x] Add a clean-clone Phase 3 reproduction recipe covering the pinned Slang, SlangPy, and Falcor
+  revisions, capped native build, focused runtime commands, expected results, and the boundary
+  between headless GPU validation and a future interactive sample.
+  - Recipe: [`structural-rt-phase3-reproduction.md`](structural-rt-phase3-reproduction.md)
 - [x] Phase 1 SlangPy/SGL source implementation committed and pushed as
   `c2e73c0b1b0eed0577e544e6abdadfa1d32f7910`.
 - [x] Final SlangPy validation/ExecPlan follow-ups committed and pushed; the Phase 0-1 submodule
