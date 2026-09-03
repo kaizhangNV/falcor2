@@ -8,19 +8,26 @@
 
 **Original structural Slang baseline:** `b0f010593568239005df17c30ea875c0edf25049`
 
-**Current compiler dependency through Phase 2:**
-`49facf2c3639d84dded49f4dfcc8d983adab904e` on
+**Current compiler dependency through Phase 3:**
+`036132fa8fbfbe2e9300a0e0edb46d0405d973d0` on
 `kaizhangNV/slang:draft/unified-pipeline-rt-api`. It includes the CUDA late-input repair at
 `7b2bf16a65406ad4fc5973b78c05bc044e57dc24`, target-safe stage names at
 `8bc787db46d61f3816528a5eb08709a379074d54`, the Release-Clang Metal termination repair and its
 regression at `b035d437be74e1ffb6c671c4e6630f07326e300b`/`e95ef5fbd549e43ef4a93502917975baf6a87848`,
-and generic structural stage-name consistency at `49facf2c3639d84dded49f4dfcc8d983adab904e`.
+generic structural stage-name consistency at `49facf2c3639d84dded49f4dfcc8d983adab904e`, and the
+CUDA structural `geometryIndex` implementation and strengthened regression at
+`6bf10cd992ba0e00233f67f8652b49b1fbba4e31`/`036132fa8fbfbe2e9300a0e0edb46d0405d973d0`.
 
-**Status:** Phase 0, Phase 1, and the Phase 2 MiniTracer slice are complete. The reusable SlangPy/SGL
-bridge passed its published Linux/Windows runtime matrix and macOS compile matrix. MiniTracer now
-runs legacy, structural, and unchanged inline paths; the focused complete-image comparison passes
-with MSE `0.0` on Linux Vulkan and CUDA/OptiX, and the same parity test passes on Windows D3D12,
-Vulkan, and CUDA. Phase 3 (ScenePicker and SelectionProbe) has not started.
+**Status:** Phases 0-3 are implemented. The reusable SlangPy/SGL bridge passed its published
+Linux/Windows runtime matrix and macOS compile matrix. MiniTracer runs legacy, structural, and
+unchanged inline paths. At Falcor commit `bb92a32c09c26322a0eb474bd5031c0d4f65cd0f`, ScenePicker
+and SelectionProbe also expose legacy/structural pipeline selection while preserving their inline
+paths. The focused Phase 3 UI suite, including exact ID-map and mask gates, passes 5/5 on Linux
+Vulkan and 5/5 on Linux CUDA/OptiX; the MiniTracer regression remains 2/2. The actual Phase 3 UI
+shaders also reflect/materialize on Apple M4 Metal, and compiler-owned closest-hit/miss and any-hit
+fixtures compile to AIR. The same UI suite passes 5/5 on Windows D3D12, Vulkan, and CUDA, and the
+MiniTracer regression passes 3/3 there. The planned Phase 3 cross-platform gate and stop-for-review
+boundary are satisfied; Phase 4 has not started.
 
 The living, cross-repository implementation and validation ledger is
 [`structural-rt-port-checklist.md`](structural-rt-port-checklist.md). Checklist items are only marked
@@ -28,14 +35,12 @@ complete after their implementation commit and validation evidence have been rec
 
 ## Executive recommendation
 
-Proceed in narrow renderer slices. MiniTracer is complete; the next slices are:
-
-1. ScenePicker through `SceneRayTracingSetup`.
-2. SelectionProbe candidate control.
-
-The Phase 1 proof is a SlangPy-owned minimal triangle canary in `external/slangpy`. MiniTracer is the
-first complete Falcor renderer proof. Stop for review after ScenePicker and SelectionProbe complete
-the remaining narrow proofs; only then port ReferencePathTracer.
+Proceed in narrow renderer slices. MiniTracer, ScenePicker, and SelectionProbe are implemented and
+the planned Phase 3 cross-platform gate is complete. Stop at the satisfied review boundary and
+review the host design and sample results before starting ReferencePathTracer. The Phase 1 proof is
+a SlangPy-owned minimal triangle canary in `external/slangpy`, MiniTracer is the first complete
+Falcor renderer proof, and Phase 3 proves the shared scene setup plus closest-hit/miss and any-hit
+candidate-control paths.
 
 The port is feasible for D3D12, Vulkan, and CUDA without redesigning the low-level slang-rhi ray tracing pipeline or shader table APIs. Inline `RayQuery` implementations can remain unchanged. SER can be converted to the existing ordinary `TraceRay` scheduler, with an expected performance loss on SER-capable hardware but no intended rendering-semantic change.
 
@@ -123,6 +128,75 @@ support even for Vulkan/CUDA. Both default-internal and explicitly public declar
 explicit module. The working form omits the explicit `module` declaration; legacy-module visibility
 still preserves reflection and composition, and real dispatch passes. This is a compiler
 capability-checking follow-up, not a MiniTracer payload/layout design gap.
+
+## Phase 3 ScenePicker and SelectionProbe outcome
+
+Falcor commit `bb92a32c09c26322a0eb474bd5031c0d4f65cd0f` adds
+`SceneRayTracingSetup::create_structural()` as the scene-owned companion to the legacy constructor.
+It reuses the SGL adapter, preserves Falcor's geometry-major slot convention, pads the current scene
+policy to six hit-group and three miss records, and gives padding groups a collision-free synthesized
+name. Structural setup rejects callable groups and scenes containing LSS because neither is supported
+by this bounded triangle-only slice; the legacy path and its CUDA built-in LSS patch remain intact.
+The new enum, structural factory, and UI selectors are exposed through `falcor2_ext`; the existing
+setup inspection fields remain exposed, while the retained entry-point state is private. Adding that
+private state changes the C++ object layout and the class is no longer usable as an aggregate, so
+source/ABI consumers must rebuild even though the legacy factory remains available.
+
+ScenePicker now has a structural closest-hit/miss layout and preserves legacy pipeline and, where
+supported, inline controls. On Vulkan and CUDA, its structural closest-hit stage creates the same
+complete `HitInfo` fields used by the legacy shader. Metal has no structural pipeline runtime in
+this stack, and the full `make_triangle_hit_info()` helper currently fails its structural Metal
+capability check, so the Metal compile-only branch populates only geometry type, geometry-instance
+ID, and primitive index. That fallback is not claimed as full runtime parity. SelectionProbe now
+has structural any-hit/miss stages that preserve ignore and accept/end-search behavior; its inline
+`RayQuery` branch is unchanged.
+
+The Linux Phase 3 gate rebuilt `falcor2_ext` against Slang
+`036132fa8fbfbe2e9300a0e0edb46d0405d973d0`. One first Clang build attempt crashed transiently in
+the allocator; retrying the same source with four jobs completed. The exact ScenePicker ID-map and
+SelectionProbe binary-mask suite passed 5/5 on Vulkan and 5/5 on CUDA/OptiX. The unchanged MiniTracer
+legacy/structural regression then passed 2/2. JUnit artifacts are
+`/tmp/falcor2-phase3-linux-vulkan.xml` (SHA-256
+`7f35e771c1a16a7b97813ad3b208b843e6ee83780b8a30df6515815c79f29a44`),
+`/tmp/falcor2-phase3-linux-cuda.xml` (SHA-256
+`b44a73d193a8b5099086954e142326417b018a88866f6838076e556248314999`), and
+`/tmp/falcor2-phase3-linux-minitracer-regression.xml` (SHA-256
+`56a88f4445f4d854ee8601436a7f47052984dc247170913d72edfaa95881fd32`). The optional broad
+`falcor2_tests` target was also attempted, but pre-existing Clang alias-template CTAD errors in the
+unchanged `test_scene.cpp`, `test_animation.cpp`, and `test_materials.cpp` prevent that target from
+building; this is non-gating for the focused Phase 3 runtime proof.
+
+On Apple M4, local-build-farm run `20260903-004845` built the underlying native Slang and SlangPy
+stack, and focused retry `20260903-010242` validated the checksum-matched Phase 3 shader files.
+After preloading `falcor2.render` to reproduce real Scene initialization order, both
+`ScenePickerProgramLayout` and `SelectionProbeProgramLayout` reflected and materialized on Metal as
+six hit records, three miss records, and two stages. Separate compiler-owned closest-hit/miss and
+any-hit fixtures generated Metal and compiled through `xcrun` to AIR, with SHA-256
+`6461897b54445a1b9abfc0f5e4ac4baa56ed88552b656f980d0247640f997eb1` and
+`5609bceb8e4b6473eaa027d702c1439fe3399061b8ef9fa2d51b9b796eee5a4a`, respectively. The retry log
+is
+`/home/zhangkai/.codex/local-build-farm/runs/falcor2-structural-rt-phase3-macos-retry/20260903-010242/macos-metal-validation-retry.log`
+(SHA-256 `ff30e31f043091581bb869b709242e9348eca515a9dd8d1d950a170296b0bc3b`). An initial E40002 raw-load
+failure was specific to the harness's module load order and disappeared with the production-order
+preload. The full Falcor macOS build remains blocked by a pre-existing OpenUSD ARM64 failure, and no
+Metal ray-tracing runtime result is claimed.
+
+On Windows, capped native build run `20260903-004418` completed both extensions against Slang
+`036132fa8fbfbe2e9300a0e0edb46d0405d973d0`; its disconnected wrapper ended before testing.
+Checksum-verified test-only run `20260903-011707` then exercised the exact implementation snapshot.
+The focused UI suite passed 5/5 on D3D12 in 12.53 seconds, 5/5 on Vulkan in 8.67 seconds, and 5/5
+on CUDA in 11.71 seconds. The MiniTracer regression passed 3/3 across D3D12, Vulkan, and CUDA in
+23.96 seconds. The preserved test log is
+`/home/zhangkai/.codex/local-build-farm/runs/falcor2-structural-rt-phase3-windows-tests2/20260903-011707/windows-tests2.log`
+(SHA-256 `05117dc10a92ff7742d33f897ef9941269c45ac80ac247be1927773d661a4473`). The four JUnit hashes are
+recorded in the checklist ledger.
+
+The CUDA `geometryIndex` prerequisite is supplied by Slang commits
+`6bf10cd992ba0e00233f67f8652b49b1fbba4e31` and
+`036132fa8fbfbe2e9300a0e0edb46d0405d973d0`. It maps to `optixGetSbtGASIndex()`, which is equivalent
+to the required Falcor geometry index only under the current Falcor/SGL invariant of one SBT record
+per acceleration-structure build input and a null per-primitive SBT-offset buffer. This is not a
+universal semantic equivalence for arbitrary OptiX host layouts.
 
 ## Surveyed scope
 
@@ -237,10 +311,12 @@ The published Phase 1 implementation provides the reusable bridge in SGL/SlangPy
    - Keep existing generated `raygen_main`, parameter-block call data, pipeline caching, and
      `ShaderObject` binding.
 
-Falcor C++ integration was not part of the Phase 1 bridge. Phase 2 now composes structural
-MiniTracer through that bridge without a new C++ API. `SceneRayTracingSetup`, its geometry-major
-SBT ordering and dummy records, and the CUDA built-in LSS compatibility path remain unchanged until
-Phase 3 or the later LSS workstream.
+Falcor C++ integration was not part of the Phase 1 bridge. Phase 2 composes structural MiniTracer
+through that bridge without a new C++ API. Phase 3 adds a Falcor-owned
+`SceneRayTracingSetup::create_structural()` companion which delegates structural materialization to
+the same SGL adapter, then applies Falcor's geometry-major bounds and dummy-record policy. The CUDA
+built-in LSS compatibility path remains legacy-only and unchanged; structural setup rejects LSS
+until the later geometry workstream.
 
 No fundamental slang-rhi API change is needed for the first D3D12, Vulkan, or CUDA ports. Its
 existing pipeline and shader-table descriptors already consume the names and groups produced by
@@ -271,7 +347,7 @@ runtime workstream.
 
 ### Required compiler implementation fixes
 
-Phases 1-2 exposed four fixed compiler implementation defects plus one contained, unresolved
+Phases 1-3 exposed five fixed compiler implementation defects plus one contained, unresolved
 explicit-module capability-checking defect; none changes the structural shader API:
 
 - Commit `7b2bf16a65406ad4fc5973b78c05bc044e57dc24` fixes CUDA/PTX lowering for late-synthesized
@@ -294,6 +370,11 @@ explicit-module capability-checking defect; none changes the structural shader A
   AST type strings included substitutions such as `<uint>`, while IR name hints used the source
   declaration identity. A shared substitution-free declaration path now drives reflection and
   synthesized target symbols.
+- Commit `6bf10cd992ba0e00233f67f8652b49b1fbba4e31` implements structural `geometryIndex` on CUDA by
+  mapping it to `optixGetSbtGASIndex()`; `036132fa8fbfbe2e9300a0e0edb46d0405d973d0` strengthens
+  the CUDA/PTX regression. The mapping is correct for Falcor/SGL's current one-SBT-record-per-build-
+  input and null-offset-buffer layout, but is not a general equivalence for arbitrary OptiX SBT
+  offset arrangements.
 
 ## Deferred design issue: ReferencePathTracer pipeline visibility
 
@@ -440,13 +521,22 @@ Windows cases passed the same `0.001` MSE threshold. Public Vulkan sample PNGs w
 
 ### Phase 3 - Falcor scene binding
 
-- Port ScenePicker through the structural `SceneRayTracingSetup` path on a triangle-only scene.
-- Compare the complete picked-ID map rather than only output dimensions.
-- Then port SelectionProbe to cover structural any-hit candidate control.
+- **Status:** implemented at Falcor commit `bb92a32c09c26322a0eb474bd5031c0d4f65cd0f`;
+  Linux and Windows runtime gates plus the macOS compile-only gate pass.
+- Added the structural `SceneRayTracingSetup` companion while retaining the legacy setup path.
+- Ported ScenePicker on a triangle-only two-geometry scene and compared the complete picked-ID map.
+- Ported SelectionProbe and compared complete masks for ignore and accept/end-search behavior
+  against legacy on Linux Vulkan/CUDA and Windows D3D12/Vulkan/CUDA, and against the unchanged
+  inline control on Vulkan and D3D12 (CUDA RayQuery is unavailable).
+- Retained six-hit/three-miss geometry-major padding, rejected structural callables and LSS, and left
+  all-slot sentinel coverage for the later full scene-stage migration.
 
-Exit gate: ScenePicker ID maps and SelectionProbe masks match legacy/inline controls.
+Linux runtime exit gate: passed 5/5 on Vulkan and 5/5 on CUDA/OptiX. The macOS compile-only gate
+also passes for both real layouts and compiler-owned Metal-to-AIR fixtures. Windows runtime passes
+5/5 on each of D3D12, Vulkan, and CUDA, with the MiniTracer regression passing 3/3.
 
-**Review boundary:** stop here and review the host design and first sample results before proceeding.
+**Review boundary:** the planned cross-platform gate is complete. Stop here and review the host
+design and sample results before proceeding; Phase 4 has not started.
 
 ### Phase 4 - Reference scatter path
 
@@ -545,23 +635,23 @@ exclusions. The surveyed Falcor shaders do not use them, so they are not risks f
   a substitution-free declaration path and adds regression coverage. This fixes target symbol
   consistency; it does not broaden Phase 1 SlangPy's intentionally bounded non-generic host
   materialization contract.
-- **Explicit-module structural capability check:** the Phase 2 MiniTracer stages diagnose E36119
-  (`invoke` missing Metal support) during raw load as an explicit/modern module, even for Vulkan/CUDA.
-  Both default-internal and explicitly public declarations fail in an explicit module. Omitting the
-  explicit `module` declaration works because legacy-module visibility keeps the declarations
-  available to structural reflection; composition and dispatch succeed. Keep that form until the
-  compiler's cross-target checking is narrowed or the stage capability inference is corrected.
+- **Explicit-module structural capability check:** MiniTracer and the Phase 3 UI stages diagnose
+  E36119 (`invoke` missing Metal support) during raw load as explicit/modern modules, even for
+  Vulkan/CUDA. Both default-internal and explicitly public declarations fail in an explicit module.
+  Omitting the explicit `module` declaration works because legacy-module visibility keeps the
+  declarations available to structural reflection; composition and dispatch succeed. Keep that
+  form until the compiler's cross-target checking is narrowed or the stage capability inference is
+  corrected.
 
 - **Procedural LSS `reportHit` on CUDA:** `IntersectionInput.reportHit()` already supplies the public
   shader API, but its target switch has no CUDA/OptiX lowering. Keep Falcor's direct
   `ReportHitOptix` compatibility path until the CUDA implementation and tests exist.
-- **Geometry index on CUDA:** structural stage inputs already expose `geometryIndex`, but its target
-  implementation omits CUDA and currently falls back to zero. Preserve `GeometryIndex2()` and add or
-  validate the OptiX lowering before porting LSS. Falcor's shim uses `optixGetSbtGASIndex()`, whose
-  equality with `GeometryIndex()` depends on Falcor's null per-geometry SBT-offset-buffer convention;
-  test and document that host invariant. Under that convention this is a target implementation gap,
-  not a need for another public property. Supporting arbitrary OptiX SBT-offset-buffer layouts may
-  require a separate semantics review.
+- **Geometry index on CUDA:** commits `6bf10cd992ba0e00233f67f8652b49b1fbba4e31` and
+  `036132fa8fbfbe2e9300a0e0edb46d0405d973d0` implement and test structural `geometryIndex` through
+  `optixGetSbtGASIndex()`. This supplies the Phase 3 triangle path under Falcor/SGL's invariant that
+  each acceleration-structure build input has one SBT record and the per-primitive SBT-offset buffer
+  is null. It is not a universal semantic equivalence for arbitrary OptiX host layouts; changing that
+  invariant requires a separate semantics review.
 
 ### Host integration and RHI/runtime gaps
 
@@ -614,6 +704,10 @@ Every native configure, build, rebuild, or test will use no more than eight jobs
 - `src/falcor2/render/ray_tracing_setup.cpp`
 - `external/slangpy/slangpy/core/calldata.py`
 - `external/slangpy/src/sgl/device/shader.cpp`
+- `slang/falcor2/ui/kernels/scene_picker_structural.slang`
+- `slang/falcor2/ui/kernels/selection_probe_structural.slang`
+- `tests/python/ui/test_scene_picker.py`
+- `tests/python/ui/test_selection_overlay.py`
 - `slang/falcor2/minitracer/renderers/simplepathtracer.slang`
 - `slang/falcor2/rendernodes/reference_pathtracer.slang`
 - `tests/python/minitracer/test_render_scenes.py`
