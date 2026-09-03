@@ -53,6 +53,23 @@ FALCOR_PY_EXPORT(ui_selection_overlay)
             &ui::SelectionOverlay::set_options,
             D(ui, SelectionOverlay, options)
         )
+        .def_prop_rw(
+            "use_raytracing_pipeline",
+            &ui::SelectionOverlay::use_raytracing_pipeline,
+            &ui::SelectionOverlay::set_use_raytracing_pipeline,
+            D_NA(ui, SelectionOverlay, use_raytracing_pipeline)
+        )
+        .def_prop_rw(
+            "ray_tracing_pipeline_api",
+            &ui::SelectionOverlay::ray_tracing_pipeline_api,
+            &ui::SelectionOverlay::set_ray_tracing_pipeline_api,
+            D_NA(ui, SelectionOverlay, ray_tracing_pipeline_api)
+        )
+        .def_prop_ro(
+            "selected_hit_texture",
+            &ui::SelectionOverlay::selected_hit_texture,
+            D_NA(ui, SelectionOverlay, selected_hit_texture)
+        )
         .def(
             "set_selected_entities",
             &ui::SelectionOverlay::set_selected_entities,

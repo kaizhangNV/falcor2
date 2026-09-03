@@ -32,6 +32,34 @@ SelectionOverlay::SelectionOverlay(ref<sgl::Device> device, std::optional<Option
     m_use_raytracing_pipeline = (m_device->type() == sgl::DeviceType::cuda);
 }
 
+void SelectionOverlay::set_use_raytracing_pipeline(bool value)
+{
+    FALCOR_CHECK(
+        value || m_device->type() != sgl::DeviceType::cuda,
+        "Inline SelectionOverlay ray tracing is not supported on CUDA/OptiX devices."
+    );
+    FALCOR_CHECK(
+        !value || m_device->has_feature(sgl::Feature::ray_tracing),
+        "SelectionOverlay ray-tracing pipelines are not supported on this device."
+    );
+    m_use_raytracing_pipeline = value;
+}
+
+void SelectionOverlay::set_ray_tracing_pipeline_api(RayTracingPipelineAPI value)
+{
+    if (value == RayTracingPipelineAPI::structural) {
+        FALCOR_CHECK(
+            m_device->slang_session()->desc().compiler_options.enable_experimental_features,
+            "Structural SelectionOverlay ray tracing requires enable_experimental_features in the device compiler "
+            "options."
+        );
+    }
+    if (m_ray_tracing_pipeline_api == value)
+        return;
+    m_ray_tracing_pipeline_api = value;
+    m_probe_rt = {};
+}
+
 void SelectionOverlay::set_options(const Options& options)
 {
     m_options = options;
@@ -220,18 +248,31 @@ void SelectionOverlay::create_probe_kernel(const Scene* scene)
 
     const SceneRequirements& requirements = scene->requirements();
 
+    const bool use_structural_api
+        = m_use_raytracing_pipeline && m_ray_tracing_pipeline_api == RayTracingPipelineAPI::structural;
+    const char* shader_path = use_structural_api ? "falcor2/ui/kernels/selection_probe_structural.slang"
+                                                 : "falcor2/ui/kernels/selection_probe.slang";
+
     std::vector<ref<sgl::SlangModule>> modules;
-    modules.push_back(m_device->load_module("falcor2/ui/kernels/selection_probe.slang"));
+    modules.push_back(m_device->load_module(shader_path));
     modules.insert(modules.end(), requirements.modules.begin(), requirements.modules.end());
-    ref<sgl::SlangModule> module
-        = m_device->compose_modules("selection_probe", modules, requirements.type_conformances);
+    ref<sgl::SlangModule> module = m_device->compose_modules(
+        use_structural_api ? "selection_probe_structural" : "selection_probe",
+        modules,
+        requirements.type_conformances
+    );
 
     if (m_use_raytracing_pipeline) {
-        SceneRayTracingSetup::RayDesc probe_ray_type;
-        probe_ray_type.name = "probe";
-        probe_ray_type.has_miss = true;
-        probe_ray_type.has_any_hit = true;
-        SceneRayTracingSetup rt_setup = SceneRayTracingSetup::create(scene, {probe_ray_type});
+        SceneRayTracingSetup rt_setup;
+        if (use_structural_api) {
+            rt_setup = SceneRayTracingSetup::create_structural(scene, module.get(), "SelectionProbeProgramLayout");
+        } else {
+            SceneRayTracingSetup::RayDesc probe_ray_type;
+            probe_ray_type.name = "probe";
+            probe_ray_type.has_miss = true;
+            probe_ray_type.has_any_hit = true;
+            rt_setup = SceneRayTracingSetup::create(scene, {probe_ray_type});
+        }
 
         m_probe_rt.program = rt_setup.link_program(module, {"selection_probe_ray_gen"});
         m_probe_rt.pipeline = rt_setup.create_pipeline({

@@ -18,6 +18,10 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
 {
     using namespace falcor;
 
+    nb::enum_<RayTracingPipelineAPI>(m, "RayTracingPipelineAPI", D_NA(RayTracingPipelineAPI))
+        .value("legacy", RayTracingPipelineAPI::legacy)
+        .value("structural", RayTracingPipelineAPI::structural);
+
     nb::class_<SceneRayTracingSetup> setup(m, "SceneRayTracingSetup", D(SceneRayTracingSetup));
 
     nb::class_<SceneRayTracingSetup::Options>(setup, "Options", D(SceneRayTracingSetup, Options))
@@ -82,6 +86,15 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
             "ray_descs"_a,
             "options"_a.none() = nb::none(),
             D(SceneRayTracingSetup, create)
+        )
+        .def_static(
+            "create_structural",
+            &SceneRayTracingSetup::create_structural,
+            "scene"_a,
+            "module"_a,
+            "layout_name"_a,
+            "options"_a.none() = nb::none(),
+            D_NA(SceneRayTracingSetup, create_structural)
         )
         .def_ro("entry_points", &SceneRayTracingSetup::entry_points, D(SceneRayTracingSetup, entry_points))
         .def_ro("hit_groups", &SceneRayTracingSetup::hit_groups, D(SceneRayTracingSetup, hit_groups))

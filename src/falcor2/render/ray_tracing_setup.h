@@ -16,10 +16,17 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace falcor {
+
+/// Shader API used to implement a native ray-tracing pipeline.
+enum class RayTracingPipelineAPI {
+    legacy,
+    structural,
+};
 
 /// Helper to create a ray tracing pipeline and shader table for a scene.
 ///
@@ -105,6 +112,21 @@ struct FALCOR_API SceneRayTracingSetup {
         return create(scene, std::span<const PerGeometryTypeRayDesc>(ray_descs.begin(), ray_descs.size()), options);
     }
 
+    /// Create a ray tracing setup from a reflected structural trace-program layout.
+    /// Empty reflected slots are padded to the scene's hit-group policy. Structural LSS layouts
+    /// are intentionally not supported yet.
+    /// @param scene The scene to create the setup for.
+    /// @param module The composed Slang module that owns the reflected layout.
+    /// @param layout_name Name of the structural trace-program layout.
+    /// @param options Optional configuration options.
+    /// @return The populated ray tracing setup.
+    static SceneRayTracingSetup create_structural(
+        const Scene* scene,
+        sgl::SlangModule* module,
+        std::string_view layout_name,
+        std::optional<Options> options = std::nullopt
+    );
+
     /// Entry point names needed for the ray tracing pipeline.
     std::vector<std::string> entry_points;
     /// Hit group descriptors for RayTracingPipelineDesc.
@@ -135,6 +157,10 @@ struct FALCOR_API SceneRayTracingSetup {
     /// @return The created shader table.
     sgl::ref<sgl::ShaderTable>
     create_shader_table(sgl::ref<sgl::ShaderProgram> program, std::vector<std::string> ray_gen_entry_points) const;
+
+private:
+    /// Structural stages are materialized entry points and cannot be looked up again by name.
+    std::vector<sgl::ref<sgl::SlangEntryPoint>> m_materialized_entry_points;
 };
 
 } // namespace falcor

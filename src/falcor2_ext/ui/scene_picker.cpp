@@ -22,6 +22,18 @@ FALCOR_PY_EXPORT(ui_scene_picker)
 
     nb::class_<ui::ScenePicker, Object>(ui, "ScenePicker", D(ui, ScenePicker))
         .def(nb::init<ref<sgl::Device>>(), "device"_a, D(ui, ScenePicker, ScenePicker))
+        .def_prop_rw(
+            "use_raytracing_pipeline",
+            &ui::ScenePicker::use_raytracing_pipeline,
+            &ui::ScenePicker::set_use_raytracing_pipeline,
+            D_NA(ui, ScenePicker, use_raytracing_pipeline)
+        )
+        .def_prop_rw(
+            "ray_tracing_pipeline_api",
+            &ui::ScenePicker::ray_tracing_pipeline_api,
+            &ui::ScenePicker::set_ray_tracing_pipeline_api,
+            D_NA(ui, ScenePicker, ray_tracing_pipeline_api)
+        )
         .def("render", &ui::ScenePicker::render, "command_encoder"_a, "scene"_a, "camera"_a, D(ui, ScenePicker, render))
         .def_prop_ro(
             "geometry_instance_id_texture",

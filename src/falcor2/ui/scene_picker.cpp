@@ -3,6 +3,7 @@
 
 #include "falcor2/ui/scene_picker.h"
 
+#include "falcor2/core/error.h"
 #include "falcor2/render/scene.h"
 #include "falcor2/render/ray_tracing_setup.h"
 #include "falcor2/render/component/camera.h"
@@ -31,6 +32,33 @@ ScenePicker::ScenePicker(ref<sgl::Device> device)
     m_use_raytracing_pipeline = (m_device->type() == sgl::DeviceType::cuda);
 }
 
+void ScenePicker::set_use_raytracing_pipeline(bool value)
+{
+    FALCOR_CHECK(
+        value || m_device->type() != sgl::DeviceType::cuda,
+        "Inline ScenePicker ray tracing is not supported on CUDA/OptiX devices."
+    );
+    FALCOR_CHECK(
+        !value || m_device->has_feature(sgl::Feature::ray_tracing),
+        "ScenePicker ray-tracing pipelines are not supported on this device."
+    );
+    m_use_raytracing_pipeline = value;
+}
+
+void ScenePicker::set_ray_tracing_pipeline_api(RayTracingPipelineAPI value)
+{
+    if (value == RayTracingPipelineAPI::structural) {
+        FALCOR_CHECK(
+            m_device->slang_session()->desc().compiler_options.enable_experimental_features,
+            "Structural ScenePicker ray tracing requires enable_experimental_features in the device compiler options."
+        );
+    }
+    if (m_ray_tracing_pipeline_api == value)
+        return;
+    m_ray_tracing_pipeline_api = value;
+    m_render_ids_rt = {};
+}
+
 void ScenePicker::create_pipelines(const Scene* scene)
 {
     // Early out if the pipelines are already created and the scene requirements haven't changed.
@@ -46,17 +74,31 @@ void ScenePicker::create_pipelines(const Scene* scene)
 
     const SceneRequirements& requirements = scene->requirements();
 
+    const bool use_structural_api
+        = m_use_raytracing_pipeline && m_ray_tracing_pipeline_api == RayTracingPipelineAPI::structural;
+    const char* shader_path = use_structural_api ? "falcor2/ui/kernels/scene_picker_structural.slang"
+                                                 : "falcor2/ui/kernels/scene_picker.slang";
+
     std::vector<ref<sgl::SlangModule>> modules;
-    modules.push_back(m_device->load_module("falcor2/ui/kernels/scene_picker.slang"));
+    modules.push_back(m_device->load_module(shader_path));
     modules.insert(modules.end(), requirements.modules.begin(), requirements.modules.end());
-    ref<sgl::SlangModule> module = m_device->compose_modules("scene_picker", modules, requirements.type_conformances);
+    ref<sgl::SlangModule> module = m_device->compose_modules(
+        use_structural_api ? "scene_picker_structural" : "scene_picker",
+        modules,
+        requirements.type_conformances
+    );
 
     if (m_use_raytracing_pipeline) {
-        SceneRayTracingSetup::RayDesc intersect_ray_type;
-        intersect_ray_type.name = "intersect";
-        intersect_ray_type.has_miss = true;
-        intersect_ray_type.has_closest_hit = true;
-        SceneRayTracingSetup rt_setup = SceneRayTracingSetup::create(scene, {intersect_ray_type});
+        SceneRayTracingSetup rt_setup;
+        if (use_structural_api) {
+            rt_setup = SceneRayTracingSetup::create_structural(scene, module.get(), "ScenePickerProgramLayout");
+        } else {
+            SceneRayTracingSetup::RayDesc intersect_ray_type;
+            intersect_ray_type.name = "intersect";
+            intersect_ray_type.has_miss = true;
+            intersect_ray_type.has_closest_hit = true;
+            rt_setup = SceneRayTracingSetup::create(scene, {intersect_ray_type});
+        }
 
         m_render_ids_rt.program = rt_setup.link_program(module, {"render_ids_ray_gen"});
         m_render_ids_rt.pipeline = rt_setup.create_pipeline({

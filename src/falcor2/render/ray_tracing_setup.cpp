@@ -9,6 +9,8 @@
 
 #include <sgl/device/device.h>
 
+#include <set>
+
 namespace falcor {
 
 static constexpr const char* DUMMY_HIT_GROUP_NAME = "__dummy_hit_group";
@@ -210,6 +212,97 @@ SceneRayTracingSetup SceneRayTracingSetup::create(
     return result;
 }
 
+SceneRayTracingSetup SceneRayTracingSetup::create_structural(
+    const Scene* scene,
+    sgl::SlangModule* module,
+    std::string_view layout_name,
+    std::optional<Options> options_
+)
+{
+    FALCOR_CHECK_NOT_NULL(scene);
+    FALCOR_CHECK_NOT_NULL(module);
+    FALCOR_CHECK(!layout_name.empty(), "layout_name must not be empty.");
+
+    Options options = options_.value_or(Options{});
+    const HitGroupPolicy& policy = scene->hit_group_policy();
+    FALCOR_CHECK(policy.mode == HitGroupPolicy::Mode::per_geometry_type, "Only per_geometry_type mode is supported.");
+    FALCOR_CHECK(
+        !scene->has_geometry_type(shared::GeometryType::lss),
+        "Structural SceneRayTracingSetup does not support LSS geometry yet."
+    );
+
+    const uint32_t hit_group_count = policy.geometry_type_count * policy.ray_type_count;
+    sgl::StructuralRayTracingBindings bindings = sgl::create_structural_ray_tracing_bindings(
+        module,
+        layout_name,
+        {
+            .min_hit_group_count = hit_group_count,
+            .min_miss_count = policy.ray_type_count,
+        }
+    );
+
+    FALCOR_CHECK(
+        bindings.hit_group_names.size() == hit_group_count,
+        "Structural layout '{}' declares hit-group slots outside the scene policy ({} slots).",
+        layout_name,
+        hit_group_count
+    );
+    FALCOR_CHECK(
+        bindings.miss_entry_points.size() == policy.ray_type_count,
+        "Structural layout '{}' declares miss slots outside the scene policy ({} slots).",
+        layout_name,
+        policy.ray_type_count
+    );
+    FALCOR_CHECK(
+        bindings.callable_entry_points.empty(),
+        "Structural layout '{}' declares callable groups, which SceneRayTracingSetup does not support yet.",
+        layout_name
+    );
+
+    SceneRayTracingSetup result;
+    result.hit_groups = std::move(bindings.hit_groups);
+    result.sbt_hit_group_names = std::move(bindings.hit_group_names);
+    result.sbt_miss_entry_points = std::move(bindings.miss_entry_points);
+    result.m_materialized_entry_points = std::move(bindings.entry_points);
+
+    result.entry_points.reserve(result.m_materialized_entry_points.size());
+    for (const auto& entry_point : result.m_materialized_entry_points)
+        result.entry_points.push_back(entry_point->name());
+
+    // slang-rhi resolves stages and hit groups through one name map. Pick a dummy-group name that
+    // cannot alias an ordinary module entry point, a synthesized structural stage, or a real group.
+    std::set<std::string> used_pipeline_names;
+    for (const auto& entry_point : module->entry_points())
+        used_pipeline_names.insert(entry_point->name());
+    for (const auto& entry_point : result.m_materialized_entry_points)
+        used_pipeline_names.insert(entry_point->name());
+    for (const auto& hit_group : result.hit_groups) {
+        used_pipeline_names.insert(hit_group.hit_group_name);
+        used_pipeline_names.insert(hit_group.closest_hit_entry_point);
+        used_pipeline_names.insert(hit_group.any_hit_entry_point);
+        used_pipeline_names.insert(hit_group.intersection_entry_point);
+    }
+
+    std::string dummy_hit_group_name = DUMMY_HIT_GROUP_NAME;
+    for (uint32_t suffix = 1; used_pipeline_names.contains(dummy_hit_group_name); ++suffix)
+        dummy_hit_group_name = fmt::format("{}_{}", DUMMY_HIT_GROUP_NAME, suffix);
+
+    bool needs_dummy_hit_group = false;
+    for (uint32_t slot = 0; slot < hit_group_count; ++slot) {
+        const uint32_t geometry_type_index = slot / policy.ray_type_count;
+        const bool geometry_type_unused = geometry_type_index >= policy.geometry_type_count
+            || !scene->has_geometry_type(static_cast<shared::GeometryType>(geometry_type_index));
+        if (result.sbt_hit_group_names[slot].empty() || (options.skip_unused_geometry_types && geometry_type_unused)) {
+            result.sbt_hit_group_names[slot] = dummy_hit_group_name;
+            needs_dummy_hit_group = true;
+        }
+    }
+    if (needs_dummy_hit_group)
+        result.hit_groups.push_back({.hit_group_name = dummy_hit_group_name});
+
+    return result;
+}
+
 sgl::ref<sgl::ShaderProgram> SceneRayTracingSetup::link_program(
     sgl::ref<sgl::SlangModule> module,
     std::vector<std::string> additional_entry_points
@@ -219,8 +312,16 @@ sgl::ref<sgl::ShaderProgram> SceneRayTracingSetup::link_program(
     resolved.reserve(additional_entry_points.size() + entry_points.size());
     for (const auto& name : additional_entry_points)
         resolved.push_back(module->entry_point(name));
-    for (const auto& name : entry_points)
-        resolved.push_back(module->entry_point(name));
+    if (m_materialized_entry_points.empty()) {
+        for (const auto& name : entry_points)
+            resolved.push_back(module->entry_point(name));
+    } else {
+        FALCOR_CHECK(
+            entry_points.size() == m_materialized_entry_points.size(),
+            "Structural entry point metadata was modified after setup creation."
+        );
+        resolved.insert(resolved.end(), m_materialized_entry_points.begin(), m_materialized_entry_points.end());
+    }
     return module->session()->device()->link_program({module}, std::move(resolved));
 }
 

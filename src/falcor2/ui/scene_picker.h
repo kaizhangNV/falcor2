@@ -8,6 +8,7 @@
 #include "falcor2/core/types.h"
 
 #include "falcor2/render/fwd.h"
+#include "falcor2/render/ray_tracing_setup.h"
 #include "falcor2/render/shared_scene_types.h"
 
 #include <sgl/device/fwd.h>
@@ -23,6 +24,18 @@ class FALCOR_API ScenePicker : public Object {
     FALCOR_OBJECT(ScenePicker)
 public:
     explicit ScenePicker(ref<sgl::Device> device);
+
+    /// Whether picking uses a native ray-tracing pipeline instead of inline ray tracing.
+    bool use_raytracing_pipeline() const { return m_use_raytracing_pipeline; }
+
+    /// Select native pipeline tracing or inline tracing.
+    void set_use_raytracing_pipeline(bool value);
+
+    /// Shader API used when native pipeline tracing is selected.
+    RayTracingPipelineAPI ray_tracing_pipeline_api() const { return m_ray_tracing_pipeline_api; }
+
+    /// Select the legacy or structural shader API for native pipeline tracing.
+    void set_ray_tracing_pipeline_api(RayTracingPipelineAPI value);
 
     /// Render geometry instance IDs into the internal texture.
     /// Creates/resizes the texture as needed based on camera dimensions.
@@ -63,6 +76,7 @@ private:
     ref<sgl::Texture> m_geometry_instance_id_texture;
 
     bool m_use_raytracing_pipeline{false};
+    RayTracingPipelineAPI m_ray_tracing_pipeline_api{RayTracingPipelineAPI::legacy};
     uint64_t m_requirements_generation{0};
 
     // Compute pipeline.
