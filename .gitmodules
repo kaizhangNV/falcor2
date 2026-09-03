@@ -1,6 +1,6 @@
 [submodule "external/slangpy"]
 	path = external/slangpy
-	url = https://github.com/shader-slang/slangpy.git
+	url = https://github.com/kaizhangNV/slangpy.git
 [submodule "data"]
 	path = data
 	url = https://github.com/NVlabs/falcor2-data.git
