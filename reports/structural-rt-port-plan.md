@@ -2,20 +2,25 @@
 
 **Survey date:** 2026-09-02
 
+**Last updated:** 2026-09-03 UTC
+
 **Falcor fork:** `kaizhangNV/falcor2`, `main` at `046545b1d3dac23e9ba1a75498eb75f6c9280dfc`
 
 **Original structural Slang baseline:** `b0f010593568239005df17c30ea875c0edf25049`
 
-**Effective Phase 1 compiler dependency:**
-`b035d437be74e1ffb6c671c4e6630f07326e300b` on
-`kaizhangNV/slang:codex/structural-rt-cuda-hit-attributes`. It includes the CUDA late-input repair
-at `7b2bf16a65406ad4fc5973b78c05bc044e57dc24`, the target-safe stage-name repair at
-`8bc787db46d61f3816528a5eb08709a379074d54`, and the Release-Clang Metal termination repair.
+**Current compiler dependency through Phase 2:**
+`49facf2c3639d84dded49f4dfcc8d983adab904e` on
+`kaizhangNV/slang:draft/unified-pipeline-rt-api`. It includes the CUDA late-input repair at
+`7b2bf16a65406ad4fc5973b78c05bc044e57dc24`, target-safe stage names at
+`8bc787db46d61f3816528a5eb08709a379074d54`, the Release-Clang Metal termination repair and its
+regression at `b035d437be74e1ffb6c671c4e6630f07326e300b`/`e95ef5fbd549e43ef4a93502917975baf6a87848`,
+and generic structural stage-name consistency at `49facf2c3639d84dded49f4dfcc8d983adab904e`.
 
-**Status:** Phase 0 and Phase 1 are complete and published. The reusable SlangPy/SGL bridge and its
-generated-raygen canary pass on Linux Vulkan/CUDA and Windows D3D12/Vulkan/CUDA; macOS passes the
-native/configuration suites and structural Metal-to-AIR compilation. No Falcor renderer source has
-been ported; the first renderer port begins in Phase 2.
+**Status:** Phase 0, Phase 1, and the Phase 2 MiniTracer slice are complete. The reusable SlangPy/SGL
+bridge passed its published Linux/Windows runtime matrix and macOS compile matrix. MiniTracer now
+runs legacy, structural, and unchanged inline paths; the focused complete-image comparison passes
+with MSE `0.0` on Linux Vulkan and CUDA/OptiX, and the same parity test passes on Windows D3D12,
+Vulkan, and CUDA. Phase 3 (ScenePicker and SelectionProbe) has not started.
 
 The living, cross-repository implementation and validation ledger is
 [`structural-rt-port-checklist.md`](structural-rt-port-checklist.md). Checklist items are only marked
@@ -23,20 +28,101 @@ complete after their implementation commit and validation evidence have been rec
 
 ## Executive recommendation
 
-After Phase 0-1, proceed in narrow renderer slices:
+Proceed in narrow renderer slices. MiniTracer is complete; the next slices are:
 
-1. MiniTracer pipeline mode.
-2. ScenePicker through `SceneRayTracingSetup`.
-3. SelectionProbe candidate control.
+1. ScenePicker through `SceneRayTracingSetup`.
+2. SelectionProbe candidate control.
 
-The Phase 1 proof is a SlangPy-owned minimal triangle canary in `external/slangpy`; it is not a
-Falcor renderer port. Stop for review after the three renderer proofs above. Only then port
-ReferencePathTracer.
+The Phase 1 proof is a SlangPy-owned minimal triangle canary in `external/slangpy`. MiniTracer is the
+first complete Falcor renderer proof. Stop for review after ScenePicker and SelectionProbe complete
+the remaining narrow proofs; only then port ReferencePathTracer.
 
 The port is feasible for D3D12, Vulkan, and CUDA without redesigning the low-level slang-rhi ray tracing pipeline or shader table APIs. Inline `RayQuery` implementations can remain unchanged. SER can be converted to the existing ordinary `TraceRay` scheduler, with an expected performance loss on SER-capable hardware but no intended rendering-semantic change.
 
 Metal runtime and full LSS support should be separate later workstreams because this Falcor snapshot
 and the current stack intentionally lack those target/runtime extensions, as classified below.
+
+## Phase 2 MiniTracer outcome
+
+MiniTracer's shared renderer is now composed with exactly one pipeline implementation: the original
+legacy stages or a structural `MiniTracerProgramLayout`. The inline `RayQuerySceneIntersector`
+remains untouched. Selection is lazy and public through `Renderer.ray_tracing_pipeline_api`; plugin
+modules are linked against that one selected root to avoid duplicate-component composition.
+
+Precondition: a fresh checkout must first build Slang at
+`49facf2c3639d84dded49f4dfcc8d983adab904e` and configure Falcor/SlangPy against that checkout; the
+Falcor commits do not vendor a compiler binary. After building the four Slang Release targets
+(`slangc`, `slang-glslang`, `slang-glsl-module`, and `slang-raytracing-module`), the Linux Falcor
+configure/build shape is:
+
+```text
+LIMITER="/absolute/path/to/run-limited-build.sh"
+SLANG_RT_DIR="/absolute/path/to/slang"
+
+CMAKE_BUILD_PARALLEL_LEVEL=8 VCPKG_MAX_CONCURRENCY=8 MAX_JOBS=8 "$LIMITER" \
+  cmake --preset linux-clang -S . -B build/linux-clang-structural \
+  -DSGL_LOCAL_SLANG=ON -DSGL_LOCAL_SLANG_DIR:PATH="$SLANG_RT_DIR" \
+  -DSGL_LOCAL_SLANG_BUILD_DIR=build/Release -DPython_ROOT_DIR:PATH="$PWD/.venv" \
+  -DFALCOR_ENABLE_NGX=OFF
+
+CMAKE_BUILD_PARALLEL_LEVEL=8 VCPKG_MAX_CONCURRENCY=8 MAX_JOBS=8 "$LIMITER" \
+  cmake --build build/linux-clang-structural --config Release --parallel 8 \
+  --target slangpy_ext falcor2_ext
+```
+
+The public sample can now be run headlessly for a direct A/B comparison from the repository root:
+
+```text
+PYTHONPATH="$PWD:$PWD/external/slangpy" .venv/bin/python examples/minitracer/basic.py \
+  data/assets/kronos/Box/glTF-Binary/Box.glb --device vulkan \
+  --pipeline-api legacy --headless --width 128 --height 128 --spp 4 \
+  --output output/minitracer-legacy.png
+
+PYTHONPATH="$PWD:$PWD/external/slangpy" .venv/bin/python examples/minitracer/basic.py \
+  data/assets/kronos/Box/glTF-Binary/Box.glb --device vulkan \
+  --pipeline-api structural --headless --width 128 --height 128 --spp 4 \
+  --output output/minitracer-structural.png
+```
+
+Both commands completed locally and produced byte-identical RGBA PNGs. Replacing the selector with
+`--pipeline-api inline` produced the same hash as an unchanged-control run. The regression test uses
+a transparent blend occluder to exercise any-hit rejection as well as closest-hit and miss behavior;
+legacy and structural float images had MSE `0.0` and maximum absolute difference `0.0` on Linux
+Vulkan and CUDA/OptiX.
+
+The final focused Linux parity rerun used the same capped test shape as the implementation gate:
+
+```text
+PYTHONPATH="$PWD:$PWD/external/slangpy" CMAKE_BUILD_PARALLEL_LEVEL=8 \
+  CTEST_PARALLEL_LEVEL=8 MAX_JOBS=8 VCPKG_MAX_CONCURRENCY=8 "$LIMITER" \
+  .venv/bin/python -m pytest tests/python/minitracer/test_structural_raytracing.py \
+  -v -s --junitxml=/tmp/falcor2-phase2-linux-minitracer.xml
+```
+
+It passed 2/2 cases in 8.73 seconds. The JUnit artifact has SHA-256
+`86f02ac9ff863f17373a28f856ef93ae2547e141133fc150cc84cdc4988a87af`.
+
+Local-build-farm invocation `20260902-220241` created the Windows worker snapshot but stopped during
+configuration because the snapshot omitted vcpkg Git metadata; its farm summary therefore records
+a failure. The failed farm `windows.log` has SHA-256
+`7d2cf25cb49f52ef34ae3c8bd6435d4b58696398ee6513329f5db6e7315fe344`. The same disposable checkout
+was resumed manually, with the metadata restored at the exact pinned baseline and the unchanged
+snapshot mapped to a short `R:` drive to stay within MSVC object-path limits. That continuation
+built Falcor and SlangPy against compiler revision
+`49facf2c3639d84dded49f4dfcc8d983adab904e`, then passed the focused test 3/3 on D3D12, Vulkan, and
+CUDA in 23.27 seconds. The preserved successful-test console log
+`/tmp/falcor2-phase2-windows-test.log` has SHA-256
+`9185a273e763c8c44421ee3ccc8a636d20d97e972ed2137cdce48d9eeb5c6db4`; the JUnit XML has SHA-256
+`c4ba9c603f0ff7e52c62cbf723924f35f06ac52582f7d9eba94e091823ecbeb5`. Neither worker accommodation
+changed repository source. The build used `--parallel 8` and `/MP8`, and an independent process
+monitor observed a peak of eight concurrent compiler/linker processes.
+
+One compiler limitation is contained in the structural shader: compiling it as an explicit/modern
+module currently triggers E36119 because the stage `invoke()` methods are diagnosed as lacking Metal
+support even for Vulkan/CUDA. Both default-internal and explicitly public declarations fail in an
+explicit module. The working form omits the explicit `module` declaration; legacy-module visibility
+still preserves reflection and composition, and real dispatch passes. This is a compiler
+capability-checking follow-up, not a MiniTracer payload/layout design gap.
 
 ## Surveyed scope
 
@@ -151,10 +237,10 @@ The published Phase 1 implementation provides the reusable bridge in SGL/SlangPy
    - Keep existing generated `raygen_main`, parameter-block call data, pipeline caching, and
      `ShaderObject` binding.
 
-Falcor C++ integration is Phase 2 and later work, not part of the implemented Phase 1 bridge. The
-first renderer change will add structural MiniTracer assembly. `SceneRayTracingSetup`, its
-geometry-major SBT ordering and dummy records, and the CUDA built-in LSS compatibility path remain
-unchanged until Phase 3 or the later LSS workstream.
+Falcor C++ integration was not part of the Phase 1 bridge. Phase 2 now composes structural
+MiniTracer through that bridge without a new C++ API. `SceneRayTracingSetup`, its geometry-major
+SBT ordering and dummy records, and the CUDA built-in LSS compatibility path remain unchanged until
+Phase 3 or the later LSS workstream.
 
 No fundamental slang-rhi API change is needed for the first D3D12, Vulkan, or CUDA ports. Its
 existing pipeline and shader-table descriptors already consume the names and groups produced by
@@ -185,7 +271,8 @@ runtime workstream.
 
 ### Required compiler implementation fixes
 
-Phase 1 exposed three compiler implementation defects; none changes the structural shader API:
+Phases 1-2 exposed four fixed compiler implementation defects plus one contained, unresolved
+explicit-module capability-checking defect; none changes the structural shader API:
 
 - Commit `7b2bf16a65406ad4fc5973b78c05bc044e57dc24` fixes CUDA/PTX lowering for late-synthesized
   structural stage inputs. Portable structural materialization could introduce triangle or custom
@@ -201,7 +288,12 @@ Phase 1 exposed three compiler implementation defects; none changes the structur
 - Commit `b035d437be74e1ffb6c671c4e6630f07326e300b` fixes a Release-Clang non-termination in Metal
   structural raygen lowering. `inlineCall()` was inside `SLANG_ASSERT`, so Clang's Release
   `__builtin_assume` erased the required mutation and the fixed-point loop rediscovered the same
-  call indefinitely. The fix evaluates `inlineCall()` unconditionally and asserts its result.
+  call indefinitely. The fix evaluates `inlineCall()` unconditionally and asserts its result;
+  `e95ef5fbd549e43ef4a93502917975baf6a87848` adds the Release regression.
+- Commit `49facf2c3639d84dded49f4dfcc8d983adab904e` makes generic structural stage names consistent.
+  AST type strings included substitutions such as `<uint>`, while IR name hints used the source
+  declaration identity. A shared substitution-free declaration path now drives reflection and
+  synthesized target symbols.
 
 ## Deferred design issue: ReferencePathTracer pipeline visibility
 
@@ -328,20 +420,23 @@ checklist records the reproducible command shapes and preserved log hashes.
   coverage, not SlangPy runtime coverage; the pinned Metal RHI has no ray-tracing pipeline/SBT/
   dispatch path.
 
-The canary metric is functional agreement at four selected pixels under
+The Phase 1 canary metric is functional agreement at four selected pixels under
 `numpy.allclose(..., atol=0.01)` with NumPy's default relative tolerance. It is not a bit-exact image
-comparison, a full-frame image metric, or a performance measurement. Phase 2 must add per-renderer
-legacy/structural output capture before changing MiniTracer.
+comparison, a full-frame image metric, or a performance measurement. Phase 2 adds the full-frame
+MiniTracer comparison recorded below.
 
 ### Phase 2 - MiniTracer pipeline
 
-- **Status:** not started; this is the first phase that modifies Falcor renderer source.
-- Port its single `HitInfo` trace context.
-- Convert miss, closest-hit, and alpha any-hit stages.
-- Keep its `RayQuerySceneIntersector` unchanged.
-- Exercise the SlangPy-generated raygen link path.
+- **Status:** complete at Falcor commit `cb73af277afdca68ac082871bfcdb5ceb6800ae8`.
+- Ported its single `HitInfo` trace context and slot-zero hit/miss groups.
+- Converted miss, closest-hit, and alpha any-hit stages while retaining the legacy stages as an
+  explicit A/B control.
+- Kept `RayQuerySceneIntersector` unchanged and ran the inline sample as a control.
+- Exercised SlangPy-generated raygen linking, reflection, plugin composition, and dispatch.
 
-Exit gate: existing image oracle passes at MSE 0.001, or same-run legacy and structural captures agree when private reference assets are unavailable.
+Exit gate: passed on Linux Vulkan and CUDA/OptiX and Windows D3D12/Vulkan/CUDA. The Linux same-run
+complete 32x32 float images measured MSE `0.0` and maximum absolute difference `0.0`; all three
+Windows cases passed the same `0.001` MSE threshold. Public Vulkan sample PNGs were byte-identical.
 
 ### Phase 3 - Falcor scene binding
 
@@ -442,8 +537,20 @@ exclusions. The surveyed Falcor shaders do not use them, so they are not risks f
   preserves explicit `renameEntryPoint()` names. This is a compiler materialization defect, not a
   shader API design gap.
 - **Metal Release adapter inlining:** the side-effecting assertion bug described above is fixed in
-  `b035d437be74e1ffb6c671c4e6630f07326e300b` and validated by ARM64 Release Metal/AIR generation.
-  This was a compiler implementation defect, not inefficient generated code or an API-design gap.
+  `b035d437be74e1ffb6c671c4e6630f07326e300b`, covered by `e95ef5fbd...`, and validated by ARM64
+  Release Metal/AIR generation. This was a compiler implementation defect, not inefficient
+  generated code or an API-design gap.
+- **Generic structural target symbols:** reflection and IR previously disagreed because only the AST
+  spelling included generic substitutions. `49facf2c3639d84dded49f4dfcc8d983adab904e` unifies them on
+  a substitution-free declaration path and adds regression coverage. This fixes target symbol
+  consistency; it does not broaden Phase 1 SlangPy's intentionally bounded non-generic host
+  materialization contract.
+- **Explicit-module structural capability check:** the Phase 2 MiniTracer stages diagnose E36119
+  (`invoke` missing Metal support) during raw load as an explicit/modern module, even for Vulkan/CUDA.
+  Both default-internal and explicitly public declarations fail in an explicit module. Omitting the
+  explicit `module` declaration works because legacy-module visibility keeps the declarations
+  available to structural reflection; composition and dispatch succeed. Keep that form until the
+  compiler's cross-target checking is narrowed or the stage capability inference is corrected.
 
 - **Procedural LSS `reportHit` on CUDA:** `IntersectionInput.reportHit()` already supplies the public
   shader API, but its target switch has no CUDA/OptiX lowering. Keep Falcor's direct
@@ -474,18 +581,19 @@ exclusions. The surveyed Falcor shaders do not use them, so they are not risks f
 - **Experimental compiler ABI drift:** Slang headers, SGL, and the loaded library can diverge. Pin and
   log one compiler commit and rebuild SGL against it.
 - **Descriptive version drift:** the fork's tag set and the local upstream tag set describe the same
-  final SHA differently (`2024.0.7-3799-gb035d437b` from fresh-worker `slangc -version` versus
-  `v2026.16-93-gb035d437b` from local `git describe`). The full commit SHA is authoritative; every
-  worker validates it before building SGL against the matching source, headers, and libraries.
+  Phase 0-1 acceptance SHA differently (`2024.0.7-3799-gb035d437b` from fresh-worker
+  `slangc -version` versus `v2026.16-93-gb035d437b` from local `git describe`). The full commit SHA
+  is authoritative; every worker validates it before building SGL against the matching source,
+  headers, and libraries.
 - **GCC 11.5 Release LTO failure:** the local optimized SlangPy build encounters a baseline GCC
   internal compiler error in `lto1`/`sched2`; the Phase 1 local implementation build therefore uses
   Debug. Treat this as a toolchain/build-configuration issue, not evidence of a structural
-  ray-tracing defect, and do not claim Release validation until a separate workaround or compiler
-  version is used.
+  ray-tracing defect, and do not claim GCC 11.5 Release/LTO validation until a separate workaround
+  or compiler version is used.
 - **GCC 13 clean-build ICE:** one eight-job Linux worker build crashed in GCC while compiling the
-  unchanged `slang-ir-inline.cpp`. The preserved failed run is `20260902-185518`; the same final SHA
-  rebuilt cleanly at four jobs in run `20260902-185955`. This is treated as host compiler pressure,
-  not source-test evidence.
+  unchanged `slang-ir-inline.cpp`. The preserved failed run is `20260902-185518`; the same Phase 0-1
+  acceptance SHA rebuilt cleanly at four jobs in run `20260902-185955`. This is treated as host
+  compiler pressure, not source-test evidence.
 
 ## Build safety
 
