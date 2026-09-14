@@ -32,6 +32,7 @@ def test_parse_args_preserves_legacy_interactive_defaults(sample: ModuleType) ->
     args = sample.parse_args([])
 
     assert args.pipeline_api == "legacy"
+    assert args.visibility_mode is None
     assert args.frames == 0
     assert args.output is None
     assert args.spp == 1
@@ -45,6 +46,8 @@ def test_parse_args_accepts_reproducible_structural_capture(sample: ModuleType) 
             "vulkan",
             "--pipeline-api",
             "structural",
+            "--visibility-mode",
+            "trace-ray",
             "--frames",
             "8",
             "--output",
@@ -62,6 +65,7 @@ def test_parse_args_accepts_reproducible_structural_capture(sample: ModuleType) 
 
     assert args.device_type == "vulkan"
     assert args.pipeline_api == "structural"
+    assert args.visibility_mode == "trace-ray"
     assert args.frames == 8
     assert args.output == Path("output/phase4.png")
     assert (args.width, args.height, args.spp, args.max_depth) == (640, 360, 2, 5)
@@ -122,19 +126,25 @@ def test_device_enables_experimental_features_only_for_structural(
         ("structural", f2.RayTracingPipelineAPI.structural),
     ],
 )
-def test_configure_pipeline_selects_scatter_api(
+def test_configure_pipeline_selects_scatter_api_and_visibility_mode(
     sample: ModuleType,
     pipeline_api: str,
     expected_api: f2.RayTracingPipelineAPI,
 ) -> None:
     path_tracer = SimpleNamespace()
     pipeline = SimpleNamespace(path_tracer=path_tracer)
-    args = SimpleNamespace(pipeline_api=pipeline_api, spp=4, max_depth=7)
+    args = SimpleNamespace(
+        pipeline_api=pipeline_api,
+        visibility_mode="trace-ray",
+        spp=4,
+        max_depth=7,
+    )
 
     sample.configure_pipeline(pipeline, args)
 
     assert pipeline.spp == 4
     assert path_tracer.ray_tracing_pipeline_api == expected_api
+    assert path_tracer.visibility_ray_mode == sample.VisibilityRayMode.trace_ray
     assert path_tracer.max_depth == 7
     assert path_tracer.enable_nee is True
     assert path_tracer.enable_mis is True

@@ -8,15 +8,8 @@ import falcor2.utils;
 // Structural ray-tracing counterpart to the stages in simplepathtracer_legacy.slang. The shared
 // renderer remains in simplepathtracer.slang so both pipeline variants use the same rendering code.
 //
-// Keep this in legacy/implicit-module mode with unannotated structural declarations for now. At the
-// compiler revision used by this port, changing it to an explicit/modern module diagnoses the stage
-// invoke() methods as missing Metal support even when the declarations stay unannotated/internal and
-// the target is Vulkan/CUDA (E36119). Legacy-module visibility still makes these declarations
-// available to reflection and to modules composed through SlangPy.
-
 struct MiniTracerTraceContext : rt::ITraceContext
 {
-    typealias Payload = HitInfo;
     typealias AccelerationStructure = rt::AccelerationStructure;
     typealias Motion = rt::NoMotion;
 }
@@ -24,13 +17,16 @@ struct MiniTracerTraceContext : rt::ITraceContext
 struct MiniTracerHitContext : rt::IHitContext
 {
     typealias TraceContext = MiniTracerTraceContext;
+    typealias Payload = HitInfo;
     typealias Primitive = rt::TrianglePrimitive;
     typealias Record = void;
 }
 
-struct MiniTracerClosestHit : rt::IClosestHitShader<MiniTracerHitContext>
+struct MiniTracerClosestHit : rt::IClosestHitShader
 {
-    void invoke(rt::ClosestHitInput<MiniTracerHitContext> input)
+    typealias Context = MiniTracerHitContext;
+
+    void invoke(rt::ClosestHitInput<Context> input)
     {
         input.payload.valid = true;
         input.payload.bary = input.triangle.barycentricCoord;
@@ -44,9 +40,11 @@ struct MiniTracerClosestHit : rt::IClosestHitShader<MiniTracerHitContext>
     }
 }
 
-struct MiniTracerAnyHit : rt::IAnyHitShader<MiniTracerHitContext>
+struct MiniTracerAnyHit : rt::IAnyHitShader
 {
-    void invoke(rt::AnyHitInput<MiniTracerHitContext> input)
+    typealias Context = MiniTracerHitContext;
+
+    void invoke(rt::AnyHitInput<Context> input)
     {
         HitInfo temp_hit = {};
         temp_hit.valid = true;
@@ -67,40 +65,34 @@ struct MiniTracerAnyHit : rt::IAnyHitShader<MiniTracerHitContext>
 
 struct MiniTracerHitGroup : rt::IHitGroup
 {
-    typealias Slot = rt::HitGroupSlot<0>;
     typealias Context = MiniTracerHitContext;
     typealias ClosestHit = MiniTracerClosestHit;
     typealias AnyHit = MiniTracerAnyHit;
-    typealias Intersection = rt::NoIntersection<MiniTracerHitContext>;
+    typealias Intersection = rt::NoIntersection<Context>;
 }
 
-struct MiniTracerMissContext : rt::IMissGroupContext
+struct MiniTracerMissContext : rt::IPayloadContext
 {
     typealias TraceContext = MiniTracerTraceContext;
+    typealias Payload = HitInfo;
     typealias Record = void;
 }
 
-struct MiniTracerMiss : rt::IMissShader<MiniTracerMissContext>
+struct MiniTracerMiss : rt::IMissShader
 {
-    void invoke(rt::MissInput<MiniTracerMissContext> input) { }
-}
-
-struct MiniTracerMissGroup : rt::IMissGroup
-{
-    typealias Slot = rt::MissSlot<0>;
     typealias Context = MiniTracerMissContext;
-    typealias Miss = MiniTracerMiss;
+    void invoke(rt::MissInput<Context> input) { }
 }
 
-struct MiniTracerProgramLayout : rt::ITraceProgramLayout
+struct MiniTracerProgramSchema : rt::ITraceProgramSchema
 {
     typealias TraceContext = MiniTracerTraceContext;
-    typealias HitGroups = rt::HitGroupList<MiniTracerTraceContext, MiniTracerHitGroup>;
-    typealias MissGroups = rt::MissGroupList<MiniTracerTraceContext, MiniTracerMissGroup>;
-    typealias CallableGroups = rt::NoCallableGroups<MiniTracerTraceContext>;
+    typealias HitGroups = rt::HitGroupList<MiniTracerHitGroup>;
+    typealias MissShaders = rt::MissShaderList<MiniTracerMiss>;
+    typealias CallableShaders = rt::NoCallableShaders;
 }
 
-rt::TraceProgramDescriptor<MiniTracerProgramLayout> mini_tracer_program;
+rt::TraceProgramDescriptor<MiniTracerProgramSchema> mini_tracer_program;
 
 struct StructuralRayTracingSceneIntersector : ISceneIntersector
 {
@@ -118,7 +110,7 @@ struct StructuralRayTracingSceneIntersector : ISceneIntersector
         desc.missIndex = 0;
 
         HitInfo hit = {};
-        rt::RayTracer<MiniTracerProgramLayout> tracer;
+        rt::RayTracer<MiniTracerProgramSchema> tracer;
         tracer.trace(desc, g_scene.tlas, mini_tracer_program, hit);
         return hit;
     }

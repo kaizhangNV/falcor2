@@ -15,6 +15,7 @@
 #include "falcor2/importers/importer_types.h"
 #include "falcor2/core/python_interpreter.h"
 
+#include <sgl/device/device.h>
 #include <sgl/math/vector.h>
 
 #include <array>
@@ -24,6 +25,59 @@
 using namespace falcor;
 
 namespace {
+
+constexpr std::string_view k_structural_pipeline_abi_source = R"SLANG(
+import slang.raytracing;
+
+struct TestPayload { uint value; }
+struct TestRecord { uint value; }
+struct TestTraceContext : rt::ITraceContext
+{
+    typealias AccelerationStructure = rt::AccelerationStructure;
+    typealias Motion = rt::NoMotion;
+}
+struct TestHitContext : rt::IHitContext
+{
+    typealias TraceContext = TestTraceContext;
+    typealias Payload = TestPayload;
+    typealias Primitive = rt::TrianglePrimitive;
+    typealias Record = TestRecord;
+}
+struct TestClosestHit : rt::IClosestHitShader
+{
+    typealias Context = TestHitContext;
+    void invoke(rt::ClosestHitInput<Context> input) { input.payload.value = 1; }
+}
+struct TestHitGroup : rt::IHitGroup
+{
+    typealias Context = TestHitContext;
+    typealias ClosestHit = TestClosestHit;
+    typealias AnyHit = rt::NoAnyHit<Context>;
+    typealias Intersection = rt::NoIntersection<Context>;
+}
+struct TestMissContext : rt::IPayloadContext
+{
+    typealias TraceContext = TestTraceContext;
+    typealias Payload = TestPayload;
+    typealias Record = TestRecord;
+}
+struct TestMiss : rt::IMissShader
+{
+    typealias Context = TestMissContext;
+    void invoke(rt::MissInput<Context> input) { input.payload.value = 0; }
+}
+struct TestSchema : rt::ITraceProgramSchema
+{
+    typealias TraceContext = TestTraceContext;
+    typealias HitGroups = rt::HitGroupList<TestHitGroup>;
+    typealias MissShaders = rt::MissShaderList<TestMiss>;
+    typealias CallableShaders = rt::NoCallableShaders;
+}
+rt::TraceProgramDescriptor<TestSchema> test_program;
+
+[shader("raygeneration")]
+void test_raygen() {}
+)SLANG";
 
 class TestSceneGlobals : public SceneGlobals {
 public:
@@ -92,10 +146,79 @@ TEST_CASE_GPU("structural ray tracing requirements reflect the scene policy")
     SceneRayTracingSetup::StructuralRequirements requirements
         = SceneRayTracingSetup::get_structural_requirements(scene.get());
 
-    CHECK_EQ(requirements.min_hit_group_count, 6);
-    CHECK_EQ(requirements.min_miss_count, 3);
-    CHECK_EQ(requirements.min_callable_count, 0);
+    CHECK_EQ(requirements.hit_group_record_count, 6);
+    CHECK_EQ(requirements.miss_shader_record_count, 3);
+    CHECK_EQ(requirements.callable_shader_record_count, 0);
     CHECK_EQ(requirements.pipeline_flags, sgl::RayTracingPipelineFlags::none);
+}
+
+TEST_CASE_GPU("structural setup applies reflected ABI sizes to its pipeline")
+{
+    if (!ctx.device->has_feature(sgl::Feature::ray_tracing))
+        return;
+
+    auto scene = Scene::create(ref(ctx.device));
+    sgl::SlangCompilerOptions compiler_options = ctx.device->desc().compiler_options;
+    compiler_options.enable_experimental_features = true;
+    ref<sgl::SlangSession> session = ctx.device->create_slang_session({
+        .compiler_options = std::move(compiler_options),
+        .add_default_include_paths = true,
+    });
+    ref<sgl::SlangModule> module
+        = session->load_module_from_source("structural_pipeline_abi", k_structural_pipeline_abi_source);
+
+    std::array<SceneRayTracingSetup::StructuralRayDesc, 2> ray_descs;
+    for (uint32_t ray_index = 0; ray_index < ray_descs.size(); ++ray_index) {
+        const uint8_t hit_value = uint8_t(0x11 + ray_index);
+        const uint8_t miss_value = uint8_t(0x21 + ray_index);
+        ray_descs[ray_index].miss_shader = {
+            .type_name = "TestMiss",
+            .data = {miss_value, 0, 0, 0},
+        };
+        ray_descs[ray_index].hit_groups[shared::GeometryType::triangle] = {
+            .type_name = "TestHitGroup",
+            .data = {hit_value, 0, 0, 0},
+        };
+    }
+    SceneRayTracingSetup::Options options{.skip_unused_geometry_types = false};
+    SceneRayTracingSetup setup
+        = SceneRayTracingSetup::create_structural(scene.get(), module.get(), "TestSchema", ray_descs, options);
+
+    CHECK_EQ(setup.max_ray_payload_size, 4);
+    CHECK_EQ(setup.max_attribute_size, 8);
+    REQUIRE_EQ(setup.sbt_hit_group_names.size(), 6);
+    CHECK_EQ(setup.sbt_hit_group_names[0], setup.sbt_hit_group_names[1]);
+    CHECK(setup.sbt_hit_group_names[0] != setup.sbt_hit_group_names[2]);
+    CHECK_EQ(setup.sbt_hit_group_names[2], setup.sbt_hit_group_names[3]);
+    CHECK_EQ(setup.sbt_hit_group_names[3], setup.sbt_hit_group_names[4]);
+    CHECK_EQ(setup.sbt_hit_group_names[4], setup.sbt_hit_group_names[5]);
+
+    const std::vector<std::vector<uint8_t>> expected_hit_record_data{
+        {0x11, 0, 0, 0},
+        {0x12, 0, 0, 0},
+        {},
+        {},
+        {},
+        {},
+    };
+    const std::vector<std::vector<uint8_t>> expected_miss_record_data{
+        {0x21, 0, 0, 0},
+        {0x22, 0, 0, 0},
+        {},
+    };
+    CHECK_EQ(setup.sbt_hit_group_record_data, expected_hit_record_data);
+    CHECK_EQ(setup.sbt_miss_shader_record_data, expected_miss_record_data);
+
+    ref<sgl::ShaderProgram> program = setup.link_program(module, {"test_raygen"});
+    ref<sgl::RayTracingPipeline> pipeline = setup.create_pipeline({
+        .program = program,
+        .max_recursion = 1,
+        .max_ray_payload_size = 999,
+        .max_attribute_size = 999,
+    });
+    REQUIRE(pipeline);
+    CHECK_EQ(pipeline->desc().max_ray_payload_size, 4);
+    CHECK_EQ(pipeline->desc().max_attribute_size, 8);
 }
 
 TEST_CASE_GPU("named refcounted scene globals garbage collection")

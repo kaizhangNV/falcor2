@@ -5,9 +5,6 @@ import slang.raytracing;
 import falcor2.render;
 import falcor2.utils;
 
-// This file intentionally uses an implicit module. The current structural ray-tracing prototype
-// diagnoses synthesized stage methods for unsupported targets when placed in an explicit module.
-
 // TODO: This is a workaround for CUDA not passing ray-gen entry point parameters correctly.
 // https://github.com/shader-slang/slang/issues/10188
 struct RenderIdsParams
@@ -19,7 +16,6 @@ ParameterBlock<RenderIdsParams> g_render_ids_params;
 
 struct ScenePickerTraceContext : rt::ITraceContext
 {
-    typealias Payload = HitInfo;
     typealias AccelerationStructure = rt::AccelerationStructure;
     typealias Motion = rt::NoMotion;
 }
@@ -27,13 +23,16 @@ struct ScenePickerTraceContext : rt::ITraceContext
 struct ScenePickerHitContext : rt::IHitContext
 {
     typealias TraceContext = ScenePickerTraceContext;
+    typealias Payload = HitInfo;
     typealias Primitive = rt::TrianglePrimitive;
     typealias Record = void;
 }
 
-struct ScenePickerClosestHit : rt::IClosestHitShader<ScenePickerHitContext>
+struct ScenePickerClosestHit : rt::IClosestHitShader
 {
-    void invoke(rt::ClosestHitInput<ScenePickerHitContext> input)
+    typealias Context = ScenePickerHitContext;
+
+    void invoke(rt::ClosestHitInput<Context> input)
     {
         __target_switch
         {
@@ -58,40 +57,34 @@ struct ScenePickerClosestHit : rt::IClosestHitShader<ScenePickerHitContext>
 
 struct ScenePickerHitGroup : rt::IHitGroup
 {
-    typealias Slot = rt::HitGroupSlot<0>;
     typealias Context = ScenePickerHitContext;
     typealias ClosestHit = ScenePickerClosestHit;
-    typealias AnyHit = rt::NoAnyHit<ScenePickerHitContext>;
-    typealias Intersection = rt::NoIntersection<ScenePickerHitContext>;
+    typealias AnyHit = rt::NoAnyHit<Context>;
+    typealias Intersection = rt::NoIntersection<Context>;
 }
 
-struct ScenePickerMissContext : rt::IMissGroupContext
+struct ScenePickerMissContext : rt::IPayloadContext
 {
     typealias TraceContext = ScenePickerTraceContext;
+    typealias Payload = HitInfo;
     typealias Record = void;
 }
 
-struct ScenePickerMiss : rt::IMissShader<ScenePickerMissContext>
+struct ScenePickerMiss : rt::IMissShader
 {
-    void invoke(rt::MissInput<ScenePickerMissContext> input) { }
-}
-
-struct ScenePickerMissGroup : rt::IMissGroup
-{
-    typealias Slot = rt::MissSlot<0>;
     typealias Context = ScenePickerMissContext;
-    typealias Miss = ScenePickerMiss;
+    void invoke(rt::MissInput<Context> input) { }
 }
 
-struct ScenePickerProgramLayout : rt::ITraceProgramLayout
+struct ScenePickerProgramSchema : rt::ITraceProgramSchema
 {
     typealias TraceContext = ScenePickerTraceContext;
-    typealias HitGroups = rt::HitGroupList<ScenePickerTraceContext, ScenePickerHitGroup>;
-    typealias MissGroups = rt::MissGroupList<ScenePickerTraceContext, ScenePickerMissGroup>;
-    typealias CallableGroups = rt::NoCallableGroups<ScenePickerTraceContext>;
+    typealias HitGroups = rt::HitGroupList<ScenePickerHitGroup>;
+    typealias MissShaders = rt::MissShaderList<ScenePickerMiss>;
+    typealias CallableShaders = rt::NoCallableShaders;
 }
 
-rt::TraceProgramDescriptor<ScenePickerProgramLayout> scene_picker_program;
+rt::TraceProgramDescriptor<ScenePickerProgramSchema> scene_picker_program;
 
 struct StructuralScenePickerIntersector : ISceneIntersector
 {
@@ -109,7 +102,7 @@ struct StructuralScenePickerIntersector : ISceneIntersector
         desc.missIndex = 0;
 
         HitInfo hit = {};
-        rt::RayTracer<ScenePickerProgramLayout> tracer;
+        rt::RayTracer<ScenePickerProgramSchema> tracer;
         tracer.trace(desc, g_scene.tlas, scene_picker_program, hit);
         return hit;
     }

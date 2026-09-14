@@ -117,9 +117,8 @@ public struct Scene
         float3 color = b.x * v0.color + b.y * v1.color + b.z * v2.color;
 
         float2 uv[UV_COUNT];
-        [ForceUnroll]
-        for (int i = 0; i < UV_COUNT; i++)
-            uv[i] = b.x * v0.uv[i] + b.y * v1.uv[i] + b.z * v2.uv[i];
+        uv[0] = b.x * v0.uv[0] + b.y * v1.uv[0] + b.z * v2.uv[0];
+        uv[1] = b.x * v0.uv[1] + b.y * v1.uv[1] + b.z * v2.uv[1];
 
         VertexData vertex = {};
         vertex.pos_ws = mul(transform, float4(pos_ls, 1.0)).xyz;

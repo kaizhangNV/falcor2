@@ -23,7 +23,7 @@ from falcor2.editor.scene_shader import SceneShaderHelper
 REFERENCE_MODULE_PATH = "falcor2/rendernodes/reference_pathtracer.slang"
 REFERENCE_LEGACY_MODULE_NAME = "falcor2.rendernodes.reference_pathtracer_legacy"
 REFERENCE_STRUCTURAL_MODULE_NAME = "falcor2.rendernodes.reference_pathtracer_structural"
-SCATTER_PROGRAM_LAYOUT = "ScatterProgramLayout"
+REFERENCE_PROGRAM_SCHEMA = "ReferencePathTracerProgramSchema"
 WRITE_GUIDE_INTERFACE = "IWriteGuide"
 
 
@@ -252,19 +252,11 @@ class ReferencePathTracerNode(RenderNode):
                     "Structural ray tracing requires Slang experimental features to be enabled "
                     "when creating the device."
                 )
-            if not self._device.has_feature(spy.Feature.ray_query):
-                raise RuntimeError(
-                    "Structural ReferencePathTracer currently requires inline RayQuery visibility; "
-                    "this device does not support ray queries."
-                )
-            if self._visibility_ray_mode == VisibilityRayMode.trace_ray:
-                warnings.warn(
-                    "Structural ReferencePathTracer maps trace-ray visibility to inline RayQuery "
-                    "until multi-payload structural pipelines are supported.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                self._visibility_ray_mode = VisibilityRayMode.ray_query
+            if (
+                self._visibility_ray_mode == VisibilityRayMode.ray_query
+                and not self._device.has_feature(spy.Feature.ray_query)
+            ):
+                self._visibility_ray_mode = VisibilityRayMode.trace_ray
 
         if mode != self._ray_tracing_pipeline_api:
             self._ray_tracing_pipeline_api = mode
@@ -300,17 +292,6 @@ class ReferencePathTracerNode(RenderNode):
     def visibility_ray_mode(self, value: VisibilityRayMode):
         """Select the visibility-ray traversal implementation."""
         mode = VisibilityRayMode(value)
-        if (
-            mode == VisibilityRayMode.trace_ray
-            and self._ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural
-        ):
-            warnings.warn(
-                "Structural ReferencePathTracer maps trace-ray visibility to inline RayQuery "
-                "until multi-payload structural pipelines are supported.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            mode = VisibilityRayMode.ray_query
         if mode == VisibilityRayMode.ray_query and not self._device.has_feature(
             spy.Feature.ray_query
         ):
@@ -379,6 +360,13 @@ class ReferencePathTracerNode(RenderNode):
                 structural_requirements = f2.SceneRayTracingSetup.get_structural_requirements(
                     self._scene
                 )
+                hit_group_types = [""] * structural_requirements.hit_group_record_count
+                miss_shader_types = [""] * structural_requirements.miss_shader_record_count
+                hit_group_types[0] = "ScatterHitGroup"
+                miss_shader_types[0] = "ScatterMiss"
+                if self._visibility_ray_mode == VisibilityRayMode.trace_ray:
+                    hit_group_types[1] = "VisibilityHitGroup"
+                    miss_shader_types[1] = "VisibilityMiss"
                 scheduler_name = "StructuralSimpleScheduler"
             else:
                 scatter_ray_desc = f2.SceneRayTracingSetup.RayDesc()
@@ -412,12 +400,12 @@ class ReferencePathTracerNode(RenderNode):
 
             if is_structural:
                 self._render_func = render_func.ray_tracing(
-                    trace_program_layout=SCATTER_PROGRAM_LAYOUT,
-                    min_hit_group_count=structural_requirements.min_hit_group_count,
-                    min_miss_count=structural_requirements.min_miss_count,
-                    min_callable_count=structural_requirements.min_callable_count,
-                    max_recursion=1,
-                    max_ray_payload_size=128,
+                    trace_program_schema=REFERENCE_PROGRAM_SCHEMA,
+                    structural_hit_group_types=hit_group_types,
+                    structural_miss_shader_types=miss_shader_types,
+                    max_recursion=(
+                        2 if self._visibility_ray_mode == VisibilityRayMode.trace_ray else 1
+                    ),
                     flags=structural_requirements.pipeline_flags,
                 )
             else:

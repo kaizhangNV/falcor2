@@ -265,7 +265,15 @@ void SelectionOverlay::create_probe_kernel(const Scene* scene)
     if (m_use_raytracing_pipeline) {
         SceneRayTracingSetup rt_setup;
         if (use_structural_api) {
-            rt_setup = SceneRayTracingSetup::create_structural(scene, module.get(), "SelectionProbeProgramLayout");
+            SceneRayTracingSetup::StructuralRayDesc probe_ray;
+            probe_ray.miss_shader.type_name = "SelectionProbeMiss";
+            probe_ray.hit_groups[shared::GeometryType::triangle].type_name = "SelectionProbeHitGroup";
+            rt_setup = SceneRayTracingSetup::create_structural(
+                scene,
+                module.get(),
+                "SelectionProbeProgramSchema",
+                {std::move(probe_ray)}
+            );
         } else {
             SceneRayTracingSetup::RayDesc probe_ray_type;
             probe_ray_type.name = "probe";
@@ -278,7 +286,7 @@ void SelectionOverlay::create_probe_kernel(const Scene* scene)
         m_probe_rt.pipeline = rt_setup.create_pipeline({
             .program = m_probe_rt.program,
             .max_recursion = 1,
-            .max_ray_payload_size = 128,
+            .max_ray_payload_size = use_structural_api ? 0u : 128u,
         });
         m_probe_rt.shader_table = rt_setup.create_shader_table(m_probe_rt.program, {"selection_probe_ray_gen"});
     } else {

@@ -91,7 +91,15 @@ void ScenePicker::create_pipelines(const Scene* scene)
     if (m_use_raytracing_pipeline) {
         SceneRayTracingSetup rt_setup;
         if (use_structural_api) {
-            rt_setup = SceneRayTracingSetup::create_structural(scene, module.get(), "ScenePickerProgramLayout");
+            SceneRayTracingSetup::StructuralRayDesc intersect_ray;
+            intersect_ray.miss_shader.type_name = "ScenePickerMiss";
+            intersect_ray.hit_groups[shared::GeometryType::triangle].type_name = "ScenePickerHitGroup";
+            rt_setup = SceneRayTracingSetup::create_structural(
+                scene,
+                module.get(),
+                "ScenePickerProgramSchema",
+                {std::move(intersect_ray)}
+            );
         } else {
             SceneRayTracingSetup::RayDesc intersect_ray_type;
             intersect_ray_type.name = "intersect";
@@ -104,7 +112,7 @@ void ScenePicker::create_pipelines(const Scene* scene)
         m_render_ids_rt.pipeline = rt_setup.create_pipeline({
             .program = m_render_ids_rt.program,
             .max_recursion = 1,
-            .max_ray_payload_size = 128,
+            .max_ray_payload_size = use_structural_api ? 0u : 128u,
         });
         m_render_ids_rt.shader_table = rt_setup.create_shader_table(m_render_ids_rt.program, {"render_ids_ray_gen"});
     } else {

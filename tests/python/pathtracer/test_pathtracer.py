@@ -117,13 +117,19 @@ def _render_mean(
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
+@pytest.mark.parametrize(
+    "visibility_ray_mode", [VisibilityRayMode.ray_query, VisibilityRayMode.trace_ray]
+)
 def test_pathtracer_structural_scatter_matches_legacy(
     device_type: spy.DeviceType,
+    visibility_ray_mode: VisibilityRayMode,
 ) -> None:
-    """Structural scatter preserves hit, miss, and inline-visibility results."""
+    """Structural scatter preserves hit, miss, and both visibility implementations."""
     device = helpers.get_device(device_type, enable_experimental_features=True)
-    if not device.has_feature(spy.Feature.ray_query):
-        pytest.skip("Structural ReferencePathTracer requires ray-query visibility")
+    if visibility_ray_mode == VisibilityRayMode.ray_query and not device.has_feature(
+        spy.Feature.ray_query
+    ):
+        pytest.skip("Ray-query visibility is not supported by this device")
 
     scene = f2.Scene.create(device)
     material = scene.create_material(
@@ -153,6 +159,7 @@ def test_pathtracer_structural_scatter_matches_legacy(
             enable_environment_light=True,
             env_map_as_background=True,
             max_depth=2,
+            visibility_ray_mode=visibility_ray_mode,
             pipeline_api=pipeline_api,
         )
         for pipeline_api in (
@@ -256,23 +263,9 @@ def test_pathtracer_structural_guides_and_mode_switch_match_legacy(
     assert setup_calls == {"requirements": 1, "create_structural": 0}
 
     requirements = real_ray_tracing_setup.get_structural_requirements(scene)
-    assert requirements.min_hit_group_count == 6
-    assert requirements.min_miss_count == 3
-    assert requirements.min_callable_count == 0
-
-    setup = real_ray_tracing_setup.create_structural(
-        scene,
-        node._module.device_module,
-        "ScatterProgramLayout",
-    )
-    assert len(setup.sbt_hit_group_names) == 6
-    assert setup.sbt_hit_group_names[0]
-    assert setup.sbt_hit_group_names[1]
-    assert setup.sbt_hit_group_names[0] != setup.sbt_hit_group_names[1]
-    assert setup.sbt_hit_group_names[1:] == [setup.sbt_hit_group_names[1]] * 5
-    assert len(setup.sbt_miss_entry_points) == 3
-    assert setup.sbt_miss_entry_points[0]
-    assert setup.sbt_miss_entry_points[1:] == ["", ""]
+    assert requirements.hit_group_record_count == 6
+    assert requirements.miss_shader_record_count == 3
+    assert requirements.callable_shader_record_count == 0
 
     monkeypatch.setattr(f2, "SceneRayTracingSetup", real_ray_tracing_setup)
     second_legacy_color, second_legacy_guides = capture(f2.RayTracingPipelineAPI.legacy)

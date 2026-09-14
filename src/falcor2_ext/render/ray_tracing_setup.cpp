@@ -38,24 +38,58 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
         D_NA(SceneRayTracingSetup, StructuralRequirements)
     )
         .def_ro(
-            "min_hit_group_count",
-            &SceneRayTracingSetup::StructuralRequirements::min_hit_group_count,
-            D_NA(SceneRayTracingSetup, StructuralRequirements, min_hit_group_count)
+            "hit_group_record_count",
+            &SceneRayTracingSetup::StructuralRequirements::hit_group_record_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, hit_group_record_count)
         )
         .def_ro(
-            "min_miss_count",
-            &SceneRayTracingSetup::StructuralRequirements::min_miss_count,
-            D_NA(SceneRayTracingSetup, StructuralRequirements, min_miss_count)
+            "miss_shader_record_count",
+            &SceneRayTracingSetup::StructuralRequirements::miss_shader_record_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, miss_shader_record_count)
         )
         .def_ro(
-            "min_callable_count",
-            &SceneRayTracingSetup::StructuralRequirements::min_callable_count,
-            D_NA(SceneRayTracingSetup, StructuralRequirements, min_callable_count)
+            "callable_shader_record_count",
+            &SceneRayTracingSetup::StructuralRequirements::callable_shader_record_count,
+            D_NA(SceneRayTracingSetup, StructuralRequirements, callable_shader_record_count)
         )
         .def_ro(
             "pipeline_flags",
             &SceneRayTracingSetup::StructuralRequirements::pipeline_flags,
             D_NA(SceneRayTracingSetup, StructuralRequirements, pipeline_flags)
+        );
+
+    nb::class_<SceneRayTracingSetup::StructuralShaderRecord>(
+        setup,
+        "StructuralShaderRecord",
+        D_NA(SceneRayTracingSetup, StructuralShaderRecord)
+    )
+        .def(nb::init<>())
+        .def_rw(
+            "type_name",
+            &SceneRayTracingSetup::StructuralShaderRecord::type_name,
+            D_NA(SceneRayTracingSetup, StructuralShaderRecord, type_name)
+        )
+        .def_rw(
+            "data",
+            &SceneRayTracingSetup::StructuralShaderRecord::data,
+            D_NA(SceneRayTracingSetup, StructuralShaderRecord, data)
+        );
+
+    nb::class_<SceneRayTracingSetup::StructuralRayDesc>(
+        setup,
+        "StructuralRayDesc",
+        D_NA(SceneRayTracingSetup, StructuralRayDesc)
+    )
+        .def(nb::init<>())
+        .def_rw(
+            "miss_shader",
+            &SceneRayTracingSetup::StructuralRayDesc::miss_shader,
+            D_NA(SceneRayTracingSetup, StructuralRayDesc, miss_shader)
+        )
+        .def_rw(
+            "hit_groups",
+            &SceneRayTracingSetup::StructuralRayDesc::hit_groups,
+            D_NA(SceneRayTracingSetup, StructuralRayDesc, hit_groups)
         );
 
     nb::class_<SceneRayTracingSetup::RayDesc>(setup, "RayDesc", D(SceneRayTracingSetup, RayDesc))
@@ -121,10 +155,16 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
         )
         .def_static(
             "create_structural",
-            &SceneRayTracingSetup::create_structural,
+            nb::overload_cast<
+                const Scene*,
+                sgl::SlangModule*,
+                std::string_view,
+                std::span<const SceneRayTracingSetup::StructuralRayDesc>,
+                std::optional<SceneRayTracingSetup::Options>>(&SceneRayTracingSetup::create_structural),
             "scene"_a,
             "module"_a,
-            "layout_name"_a,
+            "schema_name"_a,
+            "ray_descs"_a,
             "options"_a.none() = nb::none(),
             D_NA(SceneRayTracingSetup, create_structural)
         )
@@ -139,6 +179,36 @@ FALCOR_PY_EXPORT(render_ray_tracing_setup)
             "sbt_miss_entry_points",
             &SceneRayTracingSetup::sbt_miss_entry_points,
             D(SceneRayTracingSetup, sbt_miss_entry_points)
+        )
+        .def_ro(
+            "sbt_callable_entry_points",
+            &SceneRayTracingSetup::sbt_callable_entry_points,
+            D_NA(SceneRayTracingSetup, sbt_callable_entry_points)
+        )
+        .def_ro(
+            "sbt_hit_group_record_data",
+            &SceneRayTracingSetup::sbt_hit_group_record_data,
+            D_NA(SceneRayTracingSetup, sbt_hit_group_record_data)
+        )
+        .def_ro(
+            "sbt_miss_shader_record_data",
+            &SceneRayTracingSetup::sbt_miss_shader_record_data,
+            D_NA(SceneRayTracingSetup, sbt_miss_shader_record_data)
+        )
+        .def_ro(
+            "sbt_callable_shader_record_data",
+            &SceneRayTracingSetup::sbt_callable_shader_record_data,
+            D_NA(SceneRayTracingSetup, sbt_callable_shader_record_data)
+        )
+        .def_ro(
+            "max_ray_payload_size",
+            &SceneRayTracingSetup::max_ray_payload_size,
+            D_NA(SceneRayTracingSetup, max_ray_payload_size)
+        )
+        .def_ro(
+            "max_attribute_size",
+            &SceneRayTracingSetup::max_attribute_size,
+            D_NA(SceneRayTracingSetup, max_attribute_size)
         )
         .def_ro("pipeline_flags", &SceneRayTracingSetup::pipeline_flags, D(SceneRayTracingSetup, pipeline_flags))
         .def(

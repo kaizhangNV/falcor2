@@ -5,9 +5,6 @@ import slang.raytracing;
 import falcor2.render;
 import falcor2.utils;
 
-// This file intentionally uses an implicit module. The current structural ray-tracing prototype
-// diagnoses synthesized stage methods for unsupported targets when placed in an explicit module.
-
 bool is_selected(uint id, StructuredBuffer<uint> selection_bitmap, uint selection_bitmap_bit_count)
 {
     return id < selection_bitmap_bit_count && (selection_bitmap[id / 32] & (1u << (id % 32))) != 0;
@@ -54,7 +51,6 @@ struct SelectionProbePayload
 
 struct SelectionProbeTraceContext : rt::ITraceContext
 {
-    typealias Payload = SelectionProbePayload;
     typealias AccelerationStructure = rt::AccelerationStructure;
     typealias Motion = rt::NoMotion;
 }
@@ -62,13 +58,16 @@ struct SelectionProbeTraceContext : rt::ITraceContext
 struct SelectionProbeHitContext : rt::IHitContext
 {
     typealias TraceContext = SelectionProbeTraceContext;
+    typealias Payload = SelectionProbePayload;
     typealias Primitive = rt::TrianglePrimitive;
     typealias Record = void;
 }
 
-struct SelectionProbeAnyHit : rt::IAnyHitShader<SelectionProbeHitContext>
+struct SelectionProbeAnyHit : rt::IAnyHitShader
 {
-    void invoke(rt::AnyHitInput<SelectionProbeHitContext> input)
+    typealias Context = SelectionProbeHitContext;
+
+    void invoke(rt::AnyHitInput<Context> input)
     {
         uint id = input.instanceID + input.geometryIndex;
         if (is_selected(
@@ -86,40 +85,34 @@ struct SelectionProbeAnyHit : rt::IAnyHitShader<SelectionProbeHitContext>
 
 struct SelectionProbeHitGroup : rt::IHitGroup
 {
-    typealias Slot = rt::HitGroupSlot<0>;
     typealias Context = SelectionProbeHitContext;
-    typealias ClosestHit = rt::NoClosestHit<SelectionProbeHitContext>;
+    typealias ClosestHit = rt::NoClosestHit<Context>;
     typealias AnyHit = SelectionProbeAnyHit;
-    typealias Intersection = rt::NoIntersection<SelectionProbeHitContext>;
+    typealias Intersection = rt::NoIntersection<Context>;
 }
 
-struct SelectionProbeMissContext : rt::IMissGroupContext
+struct SelectionProbeMissContext : rt::IPayloadContext
 {
     typealias TraceContext = SelectionProbeTraceContext;
+    typealias Payload = SelectionProbePayload;
     typealias Record = void;
 }
 
-struct SelectionProbeMiss : rt::IMissShader<SelectionProbeMissContext>
+struct SelectionProbeMiss : rt::IMissShader
 {
-    void invoke(rt::MissInput<SelectionProbeMissContext> input) { input.payload.hit = 0; }
-}
-
-struct SelectionProbeMissGroup : rt::IMissGroup
-{
-    typealias Slot = rt::MissSlot<0>;
     typealias Context = SelectionProbeMissContext;
-    typealias Miss = SelectionProbeMiss;
+    void invoke(rt::MissInput<Context> input) { input.payload.hit = 0; }
 }
 
-struct SelectionProbeProgramLayout : rt::ITraceProgramLayout
+struct SelectionProbeProgramSchema : rt::ITraceProgramSchema
 {
     typealias TraceContext = SelectionProbeTraceContext;
-    typealias HitGroups = rt::HitGroupList<SelectionProbeTraceContext, SelectionProbeHitGroup>;
-    typealias MissGroups = rt::MissGroupList<SelectionProbeTraceContext, SelectionProbeMissGroup>;
-    typealias CallableGroups = rt::NoCallableGroups<SelectionProbeTraceContext>;
+    typealias HitGroups = rt::HitGroupList<SelectionProbeHitGroup>;
+    typealias MissShaders = rt::MissShaderList<SelectionProbeMiss>;
+    typealias CallableShaders = rt::NoCallableShaders;
 }
 
-rt::TraceProgramDescriptor<SelectionProbeProgramLayout> selection_probe_program;
+rt::TraceProgramDescriptor<SelectionProbeProgramSchema> selection_probe_program;
 
 [shader("raygeneration")]
 public void selection_probe_ray_gen()
@@ -157,7 +150,7 @@ public void selection_probe_ray_gen()
     desc.missIndex = 0;
 
     SelectionProbePayload payload = {};
-    rt::RayTracer<SelectionProbeProgramLayout> tracer;
+    rt::RayTracer<SelectionProbeProgramSchema> tracer;
     tracer.trace(desc, g_scene.tlas, selection_probe_program, payload);
     g_selection_probe_params.selected_hit_texture[pixel] = payload.hit;
 }

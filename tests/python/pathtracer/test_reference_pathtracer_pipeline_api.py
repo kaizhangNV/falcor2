@@ -61,42 +61,40 @@ def test_structural_selection_requires_experimental_features() -> None:
     assert settings_events == []
 
 
-def test_structural_selection_requires_inline_ray_query() -> None:
+def test_structural_selection_falls_back_to_pipeline_visibility() -> None:
     node, settings_events = make_unloaded_node(experimental=True, ray_query=False)
 
-    with pytest.raises(RuntimeError, match="requires inline RayQuery visibility"):
-        node.ray_tracing_pipeline_api = f2.RayTracingPipelineAPI.structural
+    node.ray_tracing_pipeline_api = f2.RayTracingPipelineAPI.structural
 
-    assert node.ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.legacy
-    assert settings_events == []
+    assert node.ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural
+    assert node.visibility_ray_mode == VisibilityRayMode.trace_ray
+    assert settings_events == ["changed"]
 
 
-def test_structural_selection_maps_trace_ray_visibility_without_loading_leaf() -> None:
+def test_structural_selection_keeps_trace_ray_visibility_without_loading_leaf() -> None:
     node, settings_events = make_unloaded_node(
         experimental=True,
         ray_query=True,
         visibility=VisibilityRayMode.trace_ray,
     )
 
-    with pytest.warns(RuntimeWarning, match="maps trace-ray visibility"):
-        node.ray_tracing_pipeline_api = "structural"
+    node.ray_tracing_pipeline_api = "structural"
 
     assert node.ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.structural
-    assert node.visibility_ray_mode == VisibilityRayMode.ray_query
+    assert node.visibility_ray_mode == VisibilityRayMode.trace_ray
     assert node._module is None
     assert node._render_func is None
     assert settings_events == ["changed"]
     assert node._structural_module is None
 
 
-def test_trace_ray_visibility_remains_compatible_alias_in_structural_mode() -> None:
+def test_trace_ray_visibility_is_selectable_in_structural_mode() -> None:
     node, settings_events = make_unloaded_node(experimental=True, ray_query=True)
     node._ray_tracing_pipeline_api = f2.RayTracingPipelineAPI.structural
 
-    with pytest.warns(RuntimeWarning, match="maps trace-ray visibility"):
-        node.visibility_ray_mode = VisibilityRayMode.trace_ray
+    node.visibility_ray_mode = VisibilityRayMode.trace_ray
 
-    assert node.visibility_ray_mode == VisibilityRayMode.ray_query
+    assert node.visibility_ray_mode == VisibilityRayMode.trace_ray
     assert settings_events == ["changed"]
 
 

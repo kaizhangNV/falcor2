@@ -342,9 +342,10 @@ class PathTracer(PropertyObject):
             call_func = call_func.constants(self._constants).set({"g_scene": scene.get_this()})
             if self._ray_tracing_pipeline_api == RayTracingPipelineAPI.structural:
                 call_func = call_func.ray_tracing(
-                    trace_program_layout="MiniTracerProgramLayout",
+                    trace_program_schema="MiniTracerProgramSchema",
+                    structural_hit_group_types=["MiniTracerHitGroup"],
+                    structural_miss_shader_types=["MiniTracerMiss"],
                     max_recursion=5,
-                    max_ray_payload_size=32,
                 )
             else:
                 call_func = call_func.ray_tracing(

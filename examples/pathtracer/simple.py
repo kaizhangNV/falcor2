@@ -10,7 +10,7 @@ from typing import Sequence
 import falcor2 as f2
 import slangpy as spy
 from falcor2.editor import Editor, EditorConfig, get_slang_include_paths, save_image
-from falcor2.rendernodes import PathTracerPipeline
+from falcor2.rendernodes import PathTracerPipeline, VisibilityRayMode
 
 DESCRIPTION = "Example PathTracer"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +28,11 @@ DEVICE_TYPES = {
 PIPELINE_APIS = {
     "legacy": f2.RayTracingPipelineAPI.legacy,
     "structural": f2.RayTracingPipelineAPI.structural,
+}
+
+VISIBILITY_MODES = {
+    "ray-query": VisibilityRayMode.ray_query,
+    "trace-ray": VisibilityRayMode.trace_ray,
 }
 
 
@@ -51,7 +56,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         epilog=(
             "Example: python examples/pathtracer/simple.py --device-type vulkan "
-            "--pipeline-api structural --frames 8 --output output/pathtracer-structural.png"
+            "--pipeline-api structural --visibility-mode trace-ray --frames 8 "
+            "--output output/pathtracer-structural.png"
         ),
     )
     parser.add_argument(
@@ -71,6 +77,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=PIPELINE_APIS,
         default="legacy",
         help="Ray-tracing pipeline shader API used for path-scatter rays.",
+    )
+    parser.add_argument(
+        "--visibility-mode",
+        choices=VISIBILITY_MODES,
+        default=None,
+        help="Visibility traversal mode; omit to select ray query when supported.",
     )
     parser.add_argument("--width", type=positive_int, default=DEFAULT_WIDTH)
     parser.add_argument("--height", type=positive_int, default=DEFAULT_HEIGHT)
@@ -109,6 +121,8 @@ def configure_pipeline(pipeline: PathTracerPipeline, args: argparse.Namespace) -
     """Apply command-line path-tracing settings before the first render."""
     pipeline.spp = args.spp
     pipeline.path_tracer.ray_tracing_pipeline_api = PIPELINE_APIS[args.pipeline_api]
+    if args.visibility_mode is not None:
+        pipeline.path_tracer.visibility_ray_mode = VISIBILITY_MODES[args.visibility_mode]
     pipeline.path_tracer.max_depth = args.max_depth
     pipeline.path_tracer.enable_nee = True
     pipeline.path_tracer.enable_mis = True

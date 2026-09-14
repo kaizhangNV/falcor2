@@ -162,7 +162,10 @@ struct PathState : IDifferentiable
     bool is_delta() { return has_flag(PathFlags::delta); }
     bool is_light_sampled_upper() { return has_flag(PathFlags::light_sampled_upper); }
     bool is_light_sampled_lower() { return has_flag(PathFlags::light_sampled_lower); }
-    bool is_light_sampled() { return has_flag(PathFlags::light_sampled_upper | PathFlags::light_sampled_lower); }
+    bool is_light_sampled()
+    {
+        return has_flag(PathFlags(uint(PathFlags::light_sampled_upper) | uint(PathFlags::light_sampled_lower)));
+    }
     bool is_primary_specular_reflection() { return has_flag(PathFlags::primary_specular_reflection); }
 
     [mutating]
@@ -198,16 +201,19 @@ struct PathState : IDifferentiable
     {
         HemisphereFlags result = HemisphereFlags::none;
         if (is_light_sampled_upper())
-            result = result | HemisphereFlags::upper;
+            result = HemisphereFlags(uint(result) | uint(HemisphereFlags::upper));
         if (is_light_sampled_lower())
-            result = result | HemisphereFlags::lower;
+            result = HemisphereFlags(uint(result) | uint(HemisphereFlags::lower));
         return result;
     }
 
     [mutating]
     void set_light_sampled_hemispheres(HemisphereFlags hemispheres)
     {
-        set_light_sampled(hemispheres & HemisphereFlags::upper, hemispheres & HemisphereFlags::lower);
+        set_light_sampled(
+            (hemispheres & HemisphereFlags::upper) != HemisphereFlags::none,
+            (hemispheres & HemisphereFlags::lower) != HemisphereFlags::none
+        );
     }
 
     uint2 pixel_id(const uint2 dims) { return uint2(path_id % dims.x, path_id / dims.x); }
@@ -244,11 +250,11 @@ HemisphereFlags make_light_sampling_decision(const BSDFFlags lobe_types)
 {
     HemisphereFlags result = HemisphereFlags::none;
     if (is_set(lobe_types, BSDFFlags::non_delta_reflection))
-        result = result | HemisphereFlags::upper;
+        result = HemisphereFlags(uint(result) | uint(HemisphereFlags::upper));
     if (is_set(lobe_types, BSDFFlags::non_delta_transmission))
-        result = result | HemisphereFlags::lower;
+        result = HemisphereFlags(uint(result) | uint(HemisphereFlags::lower));
     if (is_set(lobe_types, BSDFFlags::curve))
-        result = result | HemisphereFlags::upper | HemisphereFlags::lower;
+        result = HemisphereFlags(uint(result) | uint(HemisphereFlags::upper) | uint(HemisphereFlags::lower));
     return result;
 }
 

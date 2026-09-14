@@ -27,9 +27,13 @@ struct AdapterTestPayload
     uint value;
 }
 
+struct AdapterTestRecord
+{
+    uint value;
+}
+
 struct AdapterTestTraceContext : rt::ITraceContext
 {
-    typealias Payload = AdapterTestPayload;
     typealias AccelerationStructure = rt::AccelerationStructure;
     typealias Motion = rt::NoMotion;
 }
@@ -37,13 +41,16 @@ struct AdapterTestTraceContext : rt::ITraceContext
 struct AdapterTestHitContext : rt::IHitContext
 {
     typealias TraceContext = AdapterTestTraceContext;
+    typealias Payload = AdapterTestPayload;
     typealias Primitive = rt::TrianglePrimitive;
-    typealias Record = void;
+    typealias Record = AdapterTestRecord;
 }
 
-struct AdapterTestClosestHit : rt::IClosestHitShader<AdapterTestHitContext>
+struct AdapterTestClosestHit : rt::IClosestHitShader
 {
-    void invoke(rt::ClosestHitInput<AdapterTestHitContext> input)
+    typealias Context = AdapterTestHitContext;
+
+    void invoke(rt::ClosestHitInput<Context> input)
     {
         input.payload.value = 1;
     }
@@ -51,47 +58,42 @@ struct AdapterTestClosestHit : rt::IClosestHitShader<AdapterTestHitContext>
 
 struct AdapterTestHitGroup : rt::IHitGroup
 {
-    typealias Slot = rt::HitGroupSlot<0>;
     typealias Context = AdapterTestHitContext;
     typealias ClosestHit = AdapterTestClosestHit;
-    typealias AnyHit = rt::NoAnyHit<AdapterTestHitContext>;
-    typealias Intersection = rt::NoIntersection<AdapterTestHitContext>;
+    typealias AnyHit = rt::NoAnyHit<Context>;
+    typealias Intersection = rt::NoIntersection<Context>;
 }
 
-struct AdapterTestMissContext : rt::IMissGroupContext
+struct AdapterTestMissContext : rt::IPayloadContext
 {
     typealias TraceContext = AdapterTestTraceContext;
-    typealias Record = void;
+    typealias Payload = AdapterTestPayload;
+    typealias Record = AdapterTestRecord;
 }
 
-struct AdapterTestMiss : rt::IMissShader<AdapterTestMissContext>
+struct AdapterTestMiss : rt::IMissShader
 {
-    void invoke(rt::MissInput<AdapterTestMissContext> input)
+    typealias Context = AdapterTestMissContext;
+
+    void invoke(rt::MissInput<Context> input)
     {
         input.payload.value = 0;
     }
 }
 
-struct AdapterTestMissGroup : rt::IMissGroup
-{
-    typealias Slot = rt::MissSlot<0>;
-    typealias Context = AdapterTestMissContext;
-    typealias Miss = AdapterTestMiss;
-}
-
-struct AdapterTestLayout : rt::ITraceProgramLayout
+struct AdapterTestSchema : rt::ITraceProgramSchema
 {
     typealias TraceContext = AdapterTestTraceContext;
-    typealias HitGroups = rt::HitGroupList<AdapterTestTraceContext, AdapterTestHitGroup>;
-    typealias MissGroups = rt::MissGroupList<AdapterTestTraceContext, AdapterTestMissGroup>;
-    typealias CallableGroups = rt::NoCallableGroups<AdapterTestTraceContext>;
+    typealias HitGroups = rt::HitGroupList<AdapterTestHitGroup>;
+    typealias MissShaders = rt::MissShaderList<AdapterTestMiss>;
+    typealias CallableShaders = rt::NoCallableShaders;
 }
 
-rt::TraceProgramDescriptor<AdapterTestLayout> adapter_test_program;
+rt::TraceProgramDescriptor<AdapterTestSchema> adapter_test_program;
 
 // Reserve the setup adapter's preferred padding name as an ordinary stage.
 [shader("raygeneration")]
-public void __dummy_hit_group() { }
+public void __sgl_structural_empty_hit_group() { }
 """
 
 
@@ -151,26 +153,41 @@ def test_structural_setup_pads_scene_policy_without_name_collision(
         "test_structural_setup_padding_collision",
         STRUCTURAL_SETUP_PADDING_SOURCE,
     )
+    ray_descs = []
+    for hit_value, miss_value in ((1, 3), (2, 4)):
+        hit_record = f2.SceneRayTracingSetup.StructuralShaderRecord()
+        hit_record.type_name = "AdapterTestHitGroup"
+        hit_record.data = [hit_value, 0, 0, 0]
+        miss_record = f2.SceneRayTracingSetup.StructuralShaderRecord()
+        miss_record.type_name = "AdapterTestMiss"
+        miss_record.data = [miss_value, 0, 0, 0]
+        ray_desc = f2.SceneRayTracingSetup.StructuralRayDesc()
+        ray_desc.miss_shader = miss_record
+        ray_desc.hit_groups = {f2.GeometryType.triangle: hit_record}
+        ray_descs.append(ray_desc)
     setup = f2.SceneRayTracingSetup.create_structural(
         test_scene.scene,
         module,
-        "AdapterTestLayout",
+        "AdapterTestSchema",
+        ray_descs,
     )
 
     # Scene's geometry-major policy has two geometry types and three ray types.
-    # The structural layout supplies only triangle/ray-type zero, so the adapter
-    # must preserve that slot and pad the other five with one empty hit group.
+    # The host supplies triangle records for ray types zero and one. The adapter
+    # must preserve those repeated schema entries and pad ray type two plus the
+    # complete LSS row with one empty hit group.
     assert len(setup.sbt_hit_group_names) == 6
     real_hit_group_name = setup.sbt_hit_group_names[0]
-    dummy_hit_group_name = setup.sbt_hit_group_names[1]
+    dummy_hit_group_name = setup.sbt_hit_group_names[2]
     assert real_hit_group_name
     assert real_hit_group_name != dummy_hit_group_name
-    assert setup.sbt_hit_group_names[1:] == [dummy_hit_group_name] * 5
+    assert setup.sbt_hit_group_names[1] == real_hit_group_name
+    assert setup.sbt_hit_group_names[2:] == [dummy_hit_group_name] * 4
 
     # The preferred dummy name is already a ray-generation entry point above.
     # Verify padding picked a collision-free name and emitted exactly one matching
     # empty descriptor for all padded slots.
-    assert dummy_hit_group_name.startswith("__dummy_hit_group_")
+    assert dummy_hit_group_name.startswith("__sgl_structural_empty_hit_group_")
     matching_dummy_groups = [
         hit_group
         for hit_group in setup.hit_groups
@@ -183,7 +200,23 @@ def test_structural_setup_pads_scene_policy_without_name_collision(
 
     assert len(setup.sbt_miss_entry_points) == 3
     assert setup.sbt_miss_entry_points[0]
-    assert setup.sbt_miss_entry_points[1:] == ["", ""]
+    assert setup.sbt_miss_entry_points[1] == setup.sbt_miss_entry_points[0]
+    assert setup.sbt_miss_entry_points[2] == ""
+    assert setup.max_ray_payload_size == 4
+    assert setup.max_attribute_size == 8
+    assert setup.sbt_hit_group_record_data == [
+        [1, 0, 0, 0],
+        [2, 0, 0, 0],
+        [],
+        [],
+        [],
+        [],
+    ]
+    assert setup.sbt_miss_shader_record_data == [
+        [3, 0, 0, 0],
+        [4, 0, 0, 0],
+        [],
+    ]
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
