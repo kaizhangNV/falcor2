@@ -24,9 +24,7 @@ bool is_selected(uint id, SelectionProbeHitRecord record)
     case metal:
         if (id >= record.selection_bitmap_bit_count)
             return false;
-        ImmutablePtr<uint> metal_ptr = {
-            record.selection_bitmap_device_address + (id / 32) * sizeof(uint)
-        };
+        ImmutablePtr<uint> metal_ptr = { record.selection_bitmap_device_address + (id / 32) * sizeof(uint) };
         return ((*metal_ptr) & (1u << (id % 32))) != 0;
     case hlsl:
     case glsl:
@@ -35,7 +33,8 @@ bool is_selected(uint id, SelectionProbeHitRecord record)
         return is_selected(
             id,
             g_selection_probe_params.selection_bitmap,
-            g_selection_probe_params.selection_bitmap_bit_count);
+            g_selection_probe_params.selection_bitmap_bit_count
+        );
     default:
         return false;
     }
