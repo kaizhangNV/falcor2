@@ -104,6 +104,7 @@ private:
         m_selection_bitmap.clear();
         m_selection_bitmap_dirty = true;
         m_aabb_valid = false;
+        invalidate_structural_metal_probe();
     }
 
     void selection_bitmap_set(uint32_t id)
@@ -115,6 +116,8 @@ private:
         m_selection_bitmap[index] |= bit;
         m_selection_bitmap_dirty = true;
     }
+
+    void invalidate_structural_metal_probe();
 
     void create_probe_kernel(const Scene* scene);
     void update_aabb();

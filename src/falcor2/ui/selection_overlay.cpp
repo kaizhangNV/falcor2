@@ -19,7 +19,35 @@
 #include <sgl/device/raytracing.h>
 #include <sgl/device/shader_cursor.h>
 
+#include <cstring>
+
 namespace falcor::ui {
+
+namespace {
+
+struct SelectionProbeHitRecordData {
+    uint64_t selection_bitmap_device_address;
+    uint32_t selection_bitmap_bit_count;
+    uint32_t reserved;
+};
+
+static_assert(sizeof(SelectionProbeHitRecordData) == 16);
+
+std::vector<uint8_t>
+make_selection_probe_hit_record_data(sgl::Buffer* selection_bitmap, uint32_t bit_count, bool populate_metal_record)
+{
+    FALCOR_CHECK_NOT_NULL(selection_bitmap);
+    const SelectionProbeHitRecordData record{
+        .selection_bitmap_device_address = populate_metal_record ? selection_bitmap->device_address() : 0,
+        .selection_bitmap_bit_count = populate_metal_record ? bit_count : 0,
+        .reserved = 0,
+    };
+    std::vector<uint8_t> result(sizeof(record));
+    std::memcpy(result.data(), &record, sizeof(record));
+    return result;
+}
+
+} // namespace
 
 SelectionOverlay::SelectionOverlay(ref<sgl::Device> device, std::optional<Options> options)
     : m_device(std::move(device))
@@ -109,6 +137,15 @@ void SelectionOverlay::clear_selection()
     m_selected_entities.clear();
 }
 
+void SelectionOverlay::invalidate_structural_metal_probe()
+{
+    if (m_ray_tracing_pipeline_api == RayTracingPipelineAPI::structural && m_device->type() == sgl::DeviceType::metal) {
+        // Structural Metal candidate stages read the bitmap address and logical size from their
+        // host-owned hit record. Rebuild the pipeline and table after selection changes.
+        m_probe_rt = {};
+    }
+}
+
 void SelectionOverlay::draw_overlay(
     sgl::CommandEncoder* command_encoder,
     sgl::Texture* output_texture,
@@ -138,6 +175,7 @@ void SelectionOverlay::draw_overlay(
             .size = m_selection_bitmap.size() * sizeof(uint32_t),
             .usage = sgl::BufferUsage::shader_resource,
         });
+        invalidate_structural_metal_probe();
     }
 
     if (m_selection_bitmap_dirty) {
@@ -268,6 +306,11 @@ void SelectionOverlay::create_probe_kernel(const Scene* scene)
             SceneRayTracingSetup::StructuralRayDesc probe_ray;
             probe_ray.miss_shader.type_name = "SelectionProbeMiss";
             probe_ray.hit_groups[shared::GeometryType::triangle].type_name = "SelectionProbeHitGroup";
+            probe_ray.hit_groups[shared::GeometryType::triangle].data = make_selection_probe_hit_record_data(
+                m_selection_bitmap_buffer.get(),
+                static_cast<uint32_t>(m_selection_bitmap.size() * 32),
+                m_device->type() == sgl::DeviceType::metal
+            );
             rt_setup = SceneRayTracingSetup::create_structural(
                 scene,
                 module.get(),

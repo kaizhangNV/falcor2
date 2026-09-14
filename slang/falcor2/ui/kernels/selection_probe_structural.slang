@@ -10,6 +10,37 @@ bool is_selected(uint id, StructuredBuffer<uint> selection_bitmap, uint selectio
     return id < selection_bitmap_bit_count && (selection_bitmap[id / 32] & (1u << (id % 32))) != 0;
 }
 
+struct SelectionProbeHitRecord
+{
+    uint64_t selection_bitmap_device_address;
+    uint selection_bitmap_bit_count;
+    uint reserved;
+}
+
+bool is_selected(uint id, SelectionProbeHitRecord record)
+{
+    __target_switch
+    {
+    case metal:
+        if (id >= record.selection_bitmap_bit_count)
+            return false;
+        ImmutablePtr<uint> metal_ptr = {
+            record.selection_bitmap_device_address + (id / 32) * sizeof(uint)
+        };
+        return ((*metal_ptr) & (1u << (id % 32))) != 0;
+    case hlsl:
+    case glsl:
+    case spirv:
+    case cuda:
+        return is_selected(
+            id,
+            g_selection_probe_params.selection_bitmap,
+            g_selection_probe_params.selection_bitmap_bit_count);
+    default:
+        return false;
+    }
+}
+
 bool aabb_cull_ray(inout Ray ray, float3 aabb_min, float3 aabb_max, bool aabb_enabled)
 {
     if (!aabb_enabled)
@@ -60,7 +91,7 @@ struct SelectionProbeHitContext : rt::IHitContext
     typealias TraceContext = SelectionProbeTraceContext;
     typealias Payload = SelectionProbePayload;
     typealias Primitive = rt::TrianglePrimitive;
-    typealias Record = void;
+    typealias Record = SelectionProbeHitRecord;
 }
 
 struct SelectionProbeAnyHit : rt::IAnyHitShader
@@ -70,11 +101,7 @@ struct SelectionProbeAnyHit : rt::IAnyHitShader
     void invoke(rt::AnyHitInput<Context> input)
     {
         uint id = input.instanceID + input.geometryIndex;
-        if (is_selected(
-                id,
-                g_selection_probe_params.selection_bitmap,
-                g_selection_probe_params.selection_bitmap_bit_count
-            )) {
+        if (is_selected(id, input.record)) {
             input.payload.hit = 1;
             input.acceptHitAndEndSearch();
         } else {
