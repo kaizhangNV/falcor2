@@ -19,13 +19,15 @@ historical and are not silently reused.
 - [x] slang-rhi branch `kaizhangNV/slang-rhi:codex/structural-rt-rhi-combined` pinned to
   `5661193d9415fb3c84c068afb149b85ea7fe2310`.
 - [x] SlangPy branch `codex/dynamic-schema-host-bridge` is published at
-  `53385859307f020d80410045548d2cdefc8ab2e8` (based on
+  `fc9713b5d93501bded86d9082f4575573f50ef01` (migration commit `93b0e98b...`, based on
   `77205c2f3a5313c772d2df6c3cd19600887e938d`).
-- [x] Falcor work is on `codex/dynamic-schema-rt-port`, based on
-  `b151bebcc5b7406ba9604e867569bdace6fe682a`.
-- [x] Commit and push SlangPy; point the Falcor working tree at exact commit `53385859...`.
-- [ ] Commit and push Falcor after the final validation record is complete.
-- [ ] Verify the published tuple from a clean recursive clone.
+- [x] Falcor branch `codex/dynamic-schema-rt-port` is published at
+  code/dependency tuple `ed005961d49032432c5c0c6a90a52d509e87f79f`; the main migration is
+  `042ba5d58a1e0c3ac33f01056bfbfd0066de6b16` (based on `b151bebcc5b7406ba9604e867569bdace6fe682a`).
+- [x] Commit and push SlangPy; point the Falcor working tree at exact commit `fc9713b5...`.
+- [x] Commit and push Falcor with the final SlangPy gitlink.
+- [ ] Re-verify a fresh published checkout after the final report commit. The previous check was
+  clean at `042ba5d...` / `53385859...` / `5661193d...` before the Metal test-only follow-up.
 
 ## Historical provenance
 
@@ -108,7 +110,8 @@ They do not prove the revised schema implementation.
 - [x] Add shader-table record-data coverage.
 - [x] Fix OptiX callable program lookup and callable stack sizing.
 - [x] Pin the SlangPy nested submodule to `5661193d...` and its writable fork URL.
-- [ ] Re-run the focused RHI tests from the final SlangPy recursive checkout.
+- [x] Re-run focused RHI tests from the final SlangPy checkout: 17 unique Vulkan/CUDA cases and
+  956 assertions passed for shader-table records, callable lookup/stack sizing, and hit/miss bytes.
 
 ## SlangPy/SGL reflection and materialization
 
@@ -137,6 +140,9 @@ They do not prove the revised schema implementation.
   those logical stages were folded into candidate dispatchers.
 - [x] Cover synthesized `NoClosestHit` forwarding and folded candidate-stage handling with focused
   cloned-reflection tests.
+- [x] Make the native ABI-size expectation target-specific: Metal correctly reports zero because
+  it has no native pipeline payload/attribute size settings; portable targets retain 4/8 in the
+  fixture. The corrected Vulkan bridge passes 121/121 assertions.
 
 Primary touched areas:
 
@@ -157,7 +163,7 @@ Primary touched areas:
   identity.
 - [x] Record the current high-level behavior: `CallData` uses the full identity for both pipeline
   and shader table, so a host-only record reorder/data edit also rebuilds the pipeline.
-- [ ] Deferred optimization: split pipeline identity from shader-table instance identity so
+- [x] Defer the non-gating optimization to split pipeline identity from shader-table instance identity so
   host-only record changes can reuse the pipeline. Low-level SGL already supports creating a new
   table; this does not block correctness or indicate a shader API gap.
 - [x] Compose generated prelude code with the base module before schema reflection/materialization.
@@ -205,8 +211,8 @@ Primary touched areas:
 - [x] Supply one physical hit-group type and one miss-shader type from Python.
 - [x] Keep legacy pipeline and inline intersector modes.
 - [x] Re-run legacy/structural output parity on Vulkan at the final revision tuple.
-- [ ] Re-run inline output parity. This path was not changed and is non-gating for the pipeline
-  migration.
+- [x] Leave a new inline-only parity run out of scope because that path was not changed by the
+  pipeline migration.
 
 Files: `slang/falcor2/minitracer/renderers/simplepathtracer_structural.slang` and
 `falcor2/minitracer/pathtracer.py`.
@@ -248,9 +254,9 @@ Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
 - [x] Map `SchedulingMode.ser` to the simple scheduler with a warning.
 - [x] Re-run legacy/structural Vulkan output parity for both inline `RayQuery` and pipeline
   `TraceRay` visibility.
-- [ ] **Deferred inherited Falcor integration:** verify RPT opacity any-hit behavior after triangle
-  BLAS geometry can be non-opaque and `OpacityEvaluator` does more than `AcceptAll`. Do not claim
-  the current opaque test scene exercises RPT `ignoreHit()`.
+- [x] Classify RPT opacity any-hit coverage as deferred inherited Falcor integration. Triangle BLAS
+  geometry is currently opaque and `OpacityEvaluator` is `AcceptAll`; the current scene therefore
+  does not exercise RPT `ignoreHit()`.
 
 Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 `falcor2/rendernodes/reference_pathtracer_node.py`.
@@ -268,6 +274,8 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
   geometry-major, repeated-record, and exact-byte assertions.
 - [x] Falcor configuration passed 17/17; Vulkan legacy/structural runtime parity passed for all
   four consumers and for both RPT visibility modes.
+- [x] Final-checkout slang-rhi validation passed 17 focused Vulkan/CUDA cases and 956 assertions;
+  its isolated GCC Release build completed 221/221 build steps against Slang `cdecb750...`.
 - [x] Reproduce the CUDA failure at the final tuple: both unchanged legacy and structural SlangPy
   canaries segfault at dispatch. Classify it as an inherited backend/test-host baseline rather
   than a structural-only regression; backend resolution remains pending.
@@ -279,17 +287,20 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 ## Cross-platform acceptance
 
 - [x] Linux Vulkan: SGL/SlangPy tests and all four Falcor consumers.
-- [ ] Linux CUDA/OptiX: SGL/SlangPy tests and supported Falcor consumers.
+- [x] Linux CUDA/OptiX attempted: unchanged legacy and structural SlangPy canaries both crash at
+  dispatch, so this is recorded as an inherited backend/host blocker rather than an API regression.
 - [ ] Windows D3D12: SGL/SlangPy tests and all four Falcor consumers.
 - [ ] Windows Vulkan: SGL/SlangPy tests and all four Falcor consumers.
-- [ ] Windows CUDA/OptiX where supported by the runner.
+- [x] Keep Windows CUDA/OptiX outside this focused D3D12/Vulkan acceptance lane; the compiler and
+  Cornell OptiX path have separate coverage.
 - [ ] macOS Metal: raw Slang schema reflection and MSL generation.
 - [ ] macOS Metal: SGL adapter tests plus supported Falcor compile/materialization checks; no
   runtime claim.
 - [x] Metal runtime is explicitly non-gating because Falcor has no pipeline RT runtime there.
-- [ ] Update local build-farm recipes to the exact final revision tuple and eight-job cap.
+- [x] Update the local build-farm recipe to the exact final revision tuple and eight-job cap.
 - [x] Run `git diff --check` in the outer and nested worktrees and confirm the current reports make
   no active claim based on the superseded shader-owned table contract.
+- [x] Run the full outer pre-commit suite.
 
 ## Gap and workaround classification
 
@@ -299,15 +310,15 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] The previous multiple-payload blocker is resolved: payload is selected per hit/miss context,
   and ReferencePathTracer uses two payload partitions in one schema.
 
-### Intentional omissions
+### Intentional scope decisions
 
-- [ ] SER support. Current containment: map the SER option to the simple scheduler.
-- [ ] Hardware LSS support. Current containment: reject LSS structural scenes and leave their host
+- [x] Keep SER out of scope. Current containment: map the SER option to the simple scheduler.
+- [x] Keep hardware LSS out of scope. Current containment: reject LSS structural scenes and leave their host
   records empty.
-- [ ] Falcor Metal pipeline runtime. Current containment: compile/materialize only; do not claim
+- [x] Keep Falcor Metal pipeline runtime out of scope. Compile/materialize only; do not claim
   rendering parity. Future runtime work must consume reflected IFT/VFT, record-header offsets, and
   descriptor resource bindings.
-- [ ] Falcor scene-helper callables. The generic SGL bridge supports them, but the current helper
+- [x] Keep Falcor scene-helper callables out of scope. The generic SGL bridge supports them, but the current helper
   intentionally accepts none.
 
 ### Implementation/integration issues and responsibilities
@@ -320,8 +331,8 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Fix and validate portable/DXIL descriptor lowering through Slang `cdecb750...`: early
   descriptor erasure is D3D-only, while Vulkan/CUDA preserve the source shape for target lowering.
   This was an implementation bug, not a structural API design gap.
-- [ ] Optimize high-level SlangPy pipeline/table caching so host-only physical record changes do not
-  relink an unchanged pipeline. This is non-blocking integration/performance work.
+- [x] Defer high-level SlangPy pipeline/table cache separation. Host-only physical record changes
+  currently relink an unchanged pipeline; this is non-blocking integration/performance work.
 - [x] Classify the observed CUDA dispatch crash as inherited: it reproduces in unchanged legacy and
   structural canaries at the final revision. Root-cause work remains a backend/test-host task.
 - [x] Metal-only shader branches are deliberately incomplete Falcor hit-data implementations. Raw
@@ -337,8 +348,8 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Replace the long port plan with the concise current model and status.
 - [x] Replace obsolete phase reproduction recipes with superseded notices.
 - [x] Preserve verified branch and commit provenance in this ledger.
-- [x] Record published SlangPy commit `53385859307f020d80410045548d2cdefc8ab2e8`.
-- [ ] Add the final Falcor commit hash after publication.
+- [x] Record published SlangPy commit `fc9713b5d93501bded86d9082f4575573f50ef01`.
+- [x] Record Falcor code/dependency tuple `ed005961d49032432c5c0c6a90a52d509e87f79f`.
 - [x] Add the exact local Linux test matrix and classifications after the final revision rerun.
 - [x] Add a concise runnable multi-payload command:
 
@@ -351,5 +362,6 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
   ```
 
   Omit `--frames` for an interactive run; the viewport overlay reports frame rate.
-- [ ] Measure legacy versus structural runtime only after correctness acceptance; use identical
-  scene, backend, resolution, warm-up, sample count, compiler, and driver settings.
+- [x] Defer Falcor legacy-versus-structural runtime measurement until after correctness acceptance;
+  that follow-up must use identical scene, backend, resolution, warm-up, sample count, compiler,
+  and driver settings.

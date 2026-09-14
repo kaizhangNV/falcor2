@@ -2,8 +2,8 @@
 
 **Updated:** 2026-09-14
 
-**Status:** Linux Vulkan implementation and focused validation complete; publication and the
-remaining platform matrix are pending.
+**Status:** implementation published; Linux Vulkan acceptance complete; final Windows and macOS
+validation is running.
 
 ## Revision tuple
 
@@ -12,8 +12,8 @@ remaining platform matrix are pending.
 | Design | `kaizhangNV/slang:archive/structural-rt-with-design-docs-20260825` at `524aa27903d6ab7f46b3220466b1c7ed3415cce5` |
 | Slang | `kaizhangNV/slang:draft/unified-pipeline-rt-api` at `cdecb75031c1ce125985e51032c00a11c1f85492` ([PR #12691](https://github.com/shader-slang/slang/pull/12691)) |
 | slang-rhi | `kaizhangNV/slang-rhi:codex/structural-rt-rhi-combined` at `5661193d9415fb3c84c068afb149b85ea7fe2310` |
-| SlangPy | `codex/dynamic-schema-host-bridge` at `53385859307f020d80410045548d2cdefc8ab2e8` (published) |
-| Falcor | `codex/dynamic-schema-rt-port`; publication pending |
+| SlangPy | `codex/dynamic-schema-host-bridge` at `fc9713b5d93501bded86d9082f4575573f50ef01` (published) |
+| Falcor | `codex/dynamic-schema-rt-port` code/dependency tuple at `ed005961d49032432c5c0c6a90a52d509e87f79f` (published) |
 
 The old phase reports are historical baselines. They describe the superseded shader-owned SBT
 position model and are not acceptance evidence for this revision.
@@ -113,9 +113,9 @@ No shader API design gap is confirmed for triangle pipeline tracing without SER.
 - **Caching:** high-level SlangPy currently relinks when only physical records change. Low-level SGL
   can reuse the pipeline; splitting those cache identities is deferred performance work.
 
-## Remaining work
+## Remaining acceptance
 
-Commit and push Falcor with its gitlink pinned to SlangPy `53385859...`. Then verify the tuple from a
-clean recursive checkout and complete Windows D3D12/Vulkan, supported CUDA, and macOS compile-only
-gates. Runtime performance comparison follows correctness and must use identical scenes, warm-up,
+Complete the final Windows D3D12/Vulkan and macOS compile/materialization gates. A future Metal
+runtime must consume reflected IFT/VFT entries, record-header offsets, and descriptor bindings.
+Runtime performance comparison follows correctness and must use identical scenes, warm-up,
 dimensions, samples, compiler, and driver settings.

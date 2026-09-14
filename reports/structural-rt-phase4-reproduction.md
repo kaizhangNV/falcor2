@@ -8,14 +8,13 @@ ReferencePathTracer now declares scatter and visibility programs, with `PathPayl
 Falcor's geometry-major order. Inline visibility remains selectable; pipeline visibility uses the
 second ray type and recursion depth two.
 
-The migration is present in the current working tree, but final publication revisions and the new
-cross-platform acceptance matrix are pending.
+The migration is published in Falcor `ed005961d49032432c5c0c6a90a52d509e87f79f`, which pins
+SlangPy `fc9713b5d93501bded86d9082f4575573f50ef01`. The current acceptance matrix is in the checklist.
 
 Use these current documents instead:
 
 - [port plan](structural-rt-port-plan.md) — concise architecture, scope, status, and validation plan;
-- [checklist](structural-rt-port-checklist.md) — exact dependency pins, change ledger, pending gates,
+- [checklist](structural-rt-port-checklist.md) — exact dependency pins, change ledger, acceptance gates,
   and gap/workaround classification.
 
-A new clean-clone recipe will be recorded after the final SlangPy submodule and Falcor commits are
-published. Old Phase 4 hashes and test outcomes remain historical evidence only.
+Old Phase 4 hashes and test outcomes remain historical evidence only.
