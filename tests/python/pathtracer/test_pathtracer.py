@@ -180,10 +180,8 @@ def test_pathtracer_structural_guides_and_mode_switch_match_legacy(
     device_type: spy.DeviceType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A reused node preserves material guides and padded SBT slots across API switches."""
+    """A reused node preserves material guides and padded host records across API switches."""
     device = helpers.get_device(device_type, enable_experimental_features=True)
-    if not device.has_feature(spy.Feature.ray_query):
-        pytest.skip("Structural ReferencePathTracer requires ray-query visibility")
 
     scene = f2.Scene.create(device)
     material = scene.create_material(

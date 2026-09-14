@@ -12,7 +12,7 @@
 | Slang | `kaizhangNV/slang:draft/unified-pipeline-rt-api` at `29969e72bacd308672b37e23a1b2ad7ea88c5ee2` ([PR #12691](https://github.com/shader-slang/slang/pull/12691)) |
 | slang-rhi | `kaizhangNV/slang-rhi:codex/structural-rt-rhi-combined` at `5661193d...` |
 | SlangPy | `codex/dynamic-schema-host-bridge` at `fc9713b5...` |
-| Falcor | `codex/dynamic-schema-rt-port`; validation snapshot `b71dce2e...`, implementation `ed005961...` |
+| Falcor | `codex/dynamic-schema-rt-port`; report snapshot `c218a1aa...`, implementation `ed005961...` |
 
 The [change ledger](structural-rt-port-checklist.md) has the complete file and test checklist.
 
@@ -46,8 +46,8 @@ On Linux:
   SlangPy-shaped-generics regression;
 - at the same compiler revision, ReferencePathTracer Vulkan legacy/structural parity passed in both
   inline-visibility and pipeline-visibility modes (3/3 cases); and
-- the earlier SGL, SlangPy, and Falcor lanes passed at Slang `cdecb750...`; SGL (121/121 assertions)
-  and all four Falcor consumers (6/6 cases) were rerun at `29969e72...`.
+- the earlier lanes passed at Slang `cdecb750...`; at `29969e72...`, SGL passed 121/121 assertions,
+  SlangPy passed 21/21 cases, and all four Falcor consumers passed 6/6 cases.
 
 Run the interactive multi-payload sample with:
 

@@ -22,7 +22,7 @@ historical and are not silently reused.
   `fc9713b5d93501bded86d9082f4575573f50ef01` (migration commit `93b0e98b...`, based on
   `77205c2f3a5313c772d2df6c3cd19600887e938d`).
 - [x] Falcor branch `codex/dynamic-schema-rt-port` is published at
-  validation snapshot `b71dce2e315aedc464e455de3da6738e5e02ad03`; the code/dependency tuple is
+  report snapshot `c218a1aa66aa0090d3ed150b158316fe9c35218e`; the code/dependency tuple is
   `ed005961d49032432c5c0c6a90a52d509e87f79f`, and the main migration is
   `042ba5d58a1e0c3ac33f01056bfbfd0066de6b16` (based on `b151bebcc5b7406ba9604e867569bdace6fe682a`).
 - [x] Commit and push SlangPy; point the Falcor working tree at exact commit `fc9713b5...`.
@@ -261,6 +261,8 @@ Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
 - [x] Keep inline visibility selectable.
 - [x] Add pipeline visibility at ray type `1` with recursion depth `2`.
 - [x] Use recursion depth `1` when visibility remains inline.
+- [x] Remove the obsolete test assumption that structural RPT requires `RayQuery`; devices without
+  it select pipeline visibility.
 - [x] Map `SchedulingMode.ser` to the simple scheduler with a warning.
 - [x] Re-run legacy/structural Vulkan output parity for both inline `RayQuery` and pipeline
   `TraceRay` visibility.
@@ -288,9 +290,10 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Falcor configuration passed 17/17; Vulkan legacy/structural runtime parity passed for all
   four consumers and for both RPT visibility modes.
 - [x] At Slang source revision `29969e72...`, rerun the focused SGL bridge (121/121 assertions) and
-  the six Vulkan consumer cases for MiniTracer, ScenePicker, SelectionProbe, and ReferencePathTracer
-  (6/6 passed). The compiler version string remains generated from the earlier configure step, so
-  the source revision and loaded library path are recorded instead of mislabeling that string.
+  SlangPy configuration/runtime cases (21/21), plus the six Vulkan consumer cases for MiniTracer,
+  ScenePicker, SelectionProbe, and ReferencePathTracer (6/6). The compiler version string remains
+  generated from the earlier configure step, so the source revision and loaded library path are
+  recorded instead of mislabeling that string.
 - [x] Final-checkout slang-rhi validation passed 17 focused Vulkan/CUDA cases and 956 assertions;
   its isolated GCC Release build completed 221/221 build steps against Slang `cdecb750...`.
 - [x] Reproduce the CUDA failure at the `cdecb750...` implementation baseline: both unchanged legacy
