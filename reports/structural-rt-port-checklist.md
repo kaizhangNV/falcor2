@@ -13,7 +13,7 @@ historical and are not silently reused.
 - [x] Design archived at `kaizhangNV/slang:archive/structural-rt-with-design-docs-20260825`, commit
   `524aa27903d6ab7f46b3220466b1c7ed3415cce5`.
 - [x] Slang compiler/fork branch `kaizhangNV/slang:draft/unified-pipeline-rt-api` pinned to
-  `cdecb75031c1ce125985e51032c00a11c1f85492`.
+  `29969e72bacd308672b37e23a1b2ad7ea88c5ee2`.
 - [x] Current implementation tracked by
   [`shader-slang/slang#12691`](https://github.com/shader-slang/slang/pull/12691).
 - [x] slang-rhi branch `kaizhangNV/slang-rhi:codex/structural-rt-rhi-combined` pinned to
@@ -22,12 +22,13 @@ historical and are not silently reused.
   `fc9713b5d93501bded86d9082f4575573f50ef01` (migration commit `93b0e98b...`, based on
   `77205c2f3a5313c772d2df6c3cd19600887e938d`).
 - [x] Falcor branch `codex/dynamic-schema-rt-port` is published at
-  code/dependency tuple `ed005961d49032432c5c0c6a90a52d509e87f79f`; the main migration is
+  validation snapshot `b71dce2e315aedc464e455de3da6738e5e02ad03`; the code/dependency tuple is
+  `ed005961d49032432c5c0c6a90a52d509e87f79f`, and the main migration is
   `042ba5d58a1e0c3ac33f01056bfbfd0066de6b16` (based on `b151bebcc5b7406ba9604e867569bdace6fe682a`).
 - [x] Commit and push SlangPy; point the Falcor working tree at exact commit `fc9713b5...`.
 - [x] Commit and push Falcor with the final SlangPy gitlink.
-- [ ] Re-verify a fresh published checkout after the final report commit. The previous check was
-  clean at `042ba5d...` / `53385859...` / `5661193d...` before the Metal test-only follow-up.
+- [x] Verify a fresh published validation snapshot is clean and resolves the Falcor, SlangPy, and
+  nested slang-rhi revisions to `b71dce2...`, `fc9713b5...`, and `5661193d...` respectively.
 
 ## Historical provenance
 
@@ -49,6 +50,8 @@ They do not prove the revised schema implementation.
   live-uniform regression; validation exposed over-broad non-Metal erasure.
 - `cdecb75031c1ce125985e51032c00a11c1f85492` — preserve the source descriptor shape on
   Vulkan/CUDA until target lowering; erase it early only for D3D.
+- `29969e72bacd308672b37e23a1b2ad7ea88c5ee2` — scope structural runtime generic checks to modules
+  whose dependency closure imports the trusted ray-tracing API.
 
 ### slang-rhi history
 
@@ -92,7 +95,7 @@ They do not prove the revised schema implementation.
 - [x] Fix OptiX trace/traverse/invoke helpers to pass the exact payload register count for payloads
   larger than eight words.
 - [x] Add a compiler regression with an observable ten-word payload.
-- [x] Validate compiler head `cdecb750...`: trace-call 5/5 and portable 114/114.
+- [x] Validate compiler revision `cdecb750...`: trace-call 5/5 and portable 114/114.
 - [x] Validate Cornell direct DXIL compilation and byte-identical legacy/structural output on
   Vulkan and OptiX.
 - [x] Consume the reflected group-level name for synthesized `NoClosestHit`; restored focused
@@ -100,6 +103,11 @@ They do not prove the revised schema implementation.
 - [x] Add DXIL SIMPLE regression coverage with a live ordinary uniform in `c8fbc736...`.
 - [x] Restrict early descriptor erasure to D3D in `cdecb750...`; Vulkan/CUDA retain the source shape
   until their target-specific lowering consumes it.
+- [x] Fix linkage-wide structural generic checking in `29969e72...`: checks now require the current
+  module or a dependency to import the trusted ray-tracing API.
+- [x] Add and pass a regression that imports `slang.raytracing` before an unrelated module containing
+  SlangPy-shaped vector and integer generics; this failed before the visibility fix.
+- [x] Run the complete `tests/ray-tracing-2` suite at `29969e72...`: 384/384 passed.
 
 ## slang-rhi
 
@@ -143,6 +151,8 @@ They do not prove the revised schema implementation.
 - [x] Make the native ABI-size expectation target-specific: Metal correctly reports zero because
   it has no native pipeline payload/attribute size settings; portable targets retain 4/8 in the
   fixture. The corrected Vulkan bridge passes 121/121 assertions.
+- [x] Update SlangPy's `print.slang`/`staticarray.slang` matrix generic parameter to
+  `MatrixLayoutMode` for Slang 2026.17.1 and cover it through native shader loading.
 
 Primary touched areas:
 
@@ -210,7 +220,7 @@ Primary touched areas:
 - [x] Select schema mode from `Renderer.ray_tracing_pipeline_api`.
 - [x] Supply one physical hit-group type and one miss-shader type from Python.
 - [x] Keep legacy pipeline and inline intersector modes.
-- [x] Re-run legacy/structural output parity on Vulkan at the final revision tuple.
+- [x] Re-run legacy/structural output parity on Vulkan with Slang `29969e72...`.
 - [x] Leave a new inline-only parity run out of scope because that path was not changed by the
   pipeline migration.
 
@@ -223,7 +233,7 @@ Files: `slang/falcor2/minitracer/renderers/simplepathtracer_structural.slang` an
 - [x] Build its physical table through `SceneRayTracingSetup::create_structural()`.
 - [x] Preserve legacy pipeline and compute/inline selection.
 - [x] Retain the CUDA ray-generation global parameter-block workaround.
-- [x] Re-run exact picked-ID map parity on Vulkan at the final revision tuple.
+- [x] Re-run exact picked-ID map parity on Vulkan with Slang `29969e72...`.
 
 Files: `slang/falcor2/ui/kernels/scene_picker_structural.slang` and
 `src/falcor2/ui/scene_picker.cpp`.
@@ -254,6 +264,9 @@ Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
 - [x] Map `SchedulingMode.ser` to the simple scheduler with a warning.
 - [x] Re-run legacy/structural Vulkan output parity for both inline `RayQuery` and pipeline
   `TraceRay` visibility.
+- [x] Verify the real composed program supplies `ILight`/`IMaterial` conformances and materializes
+  both payload partitions. A standalone probe also succeeds after composing `ConstantLight` and
+  `StandardMaterial` explicitly.
 - [x] Classify RPT opacity any-hit coverage as deferred inherited Falcor integration. Triangle BLAS
   geometry is currently opaque and `OpacityEvaluator` is `AcceptAll`; the current scene therefore
   does not exercise RPT `ignoreHit()`.
@@ -265,20 +278,24 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 
 - [x] At Slang `cdecb750...`, trace-call passed 5/5, portable passed 114/114, Cornell direct DXIL
   compiled cleanly, and Cornell legacy/structural output was byte-identical on Vulkan and OptiX.
-- [x] At final compiler head, the focused SGL bridge passed 121/121 assertions, SlangPy
-  configuration passed 19/19, and both Vulkan legacy and repeated-record/distinct-byte structural
-  runtime canaries passed.
+- [x] At Slang `cdecb750...`, the focused SGL bridge passed 121/121 assertions, SlangPy configuration
+  passed 19/19, and both Vulkan legacy and repeated-record/distinct-byte structural runtime canaries
+  passed.
 - [x] Rebuild SlangPy and Falcor against Slang `cdecb750...` (reported version
-  `2026.17.1-156-gcdecb7503`) with the eight-job limiter.
+  `2026.17.1-156-gcdecb7503`) with the eight-job limiter for the original implementation baseline.
 - [x] Falcor GCC native tests passed 4/4 scene-policy assertions and 13/13 reflected-ABI,
   geometry-major, repeated-record, and exact-byte assertions.
 - [x] Falcor configuration passed 17/17; Vulkan legacy/structural runtime parity passed for all
   four consumers and for both RPT visibility modes.
+- [x] At Slang source revision `29969e72...`, rerun the focused SGL bridge (121/121 assertions) and
+  the six Vulkan consumer cases for MiniTracer, ScenePicker, SelectionProbe, and ReferencePathTracer
+  (6/6 passed). The compiler version string remains generated from the earlier configure step, so
+  the source revision and loaded library path are recorded instead of mislabeling that string.
 - [x] Final-checkout slang-rhi validation passed 17 focused Vulkan/CUDA cases and 956 assertions;
   its isolated GCC Release build completed 221/221 build steps against Slang `cdecb750...`.
-- [x] Reproduce the CUDA failure at the final tuple: both unchanged legacy and structural SlangPy
-  canaries segfault at dispatch. Classify it as an inherited backend/test-host baseline rather
-  than a structural-only regression; backend resolution remains pending.
+- [x] Reproduce the CUDA failure at the `cdecb750...` implementation baseline: both unchanged legacy
+  and structural SlangPy canaries segfault at dispatch. Classify it as an inherited backend/test-
+  host baseline rather than a structural-only regression; backend resolution remains pending.
 - [x] Record the Linux Vulkan adapter as NVIDIA RTX PRO 6000 Blackwell Workstation Edition.
 - [x] Record compiler fallback: Clang built production libraries, but Clang 17 rejected existing
   alias-template deduction in unrelated test files; GCC linked and ran the native tests.
@@ -293,11 +310,12 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [ ] Windows Vulkan: SGL/SlangPy tests and all four Falcor consumers.
 - [x] Keep Windows CUDA/OptiX outside this focused D3D12/Vulkan acceptance lane; the compiler and
   Cornell OptiX path have separate coverage.
-- [ ] macOS Metal: raw Slang schema reflection and MSL generation.
+- [ ] macOS Metal: composed-program schema reflection and MSL generation.
 - [ ] macOS Metal: SGL adapter tests plus supported Falcor compile/materialization checks; no
   runtime claim.
 - [x] Metal runtime is explicitly non-gating because Falcor has no pipeline RT runtime there.
-- [x] Update the local build-farm recipe to the exact final revision tuple and eight-job cap.
+- [ ] Update the local build-farm recipe to Slang `29969e72...`, the Falcor validation candidate,
+  and the eight-job cap.
 - [x] Run `git diff --check` in the outer and nested worktrees and confirm the current reports make
   no active claim based on the superseded shader-owned table contract.
 - [x] Run the full outer pre-commit suite.
@@ -331,10 +349,17 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Fix and validate portable/DXIL descriptor lowering through Slang `cdecb750...`: early
   descriptor erasure is D3D-only, while Vulkan/CUDA preserve the source shape for target lowering.
   This was an implementation bug, not a structural API design gap.
+- [x] Fix structural generic checks that were activated for every module in one linkage. Scoping
+  them to modules whose dependency closure imports the API removes the SlangPy import-order failure;
+  this was a compiler integration bug, not an API design gap.
+- [x] Classify standalone ReferencePathTracer reflection correctly: the raw module is an incomplete
+  program because Falcor supplies dynamic `ILight` and `IMaterial` conformances at composition.
+  Explicit composition and normal RPT runtime both pass; no shader workaround is required.
 - [x] Defer high-level SlangPy pipeline/table cache separation. Host-only physical record changes
   currently relink an unchanged pipeline; this is non-blocking integration/performance work.
 - [x] Classify the observed CUDA dispatch crash as inherited: it reproduces in unchanged legacy and
-  structural canaries at the final revision. Root-cause work remains a backend/test-host task.
+  structural canaries at the `cdecb750...` baseline. Root-cause work remains a backend/test-host
+  task.
 - [x] Metal-only shader branches are deliberately incomplete Falcor hit-data implementations. Raw
   Slang schema/MSL codegen is compile evidence, not runtime correctness.
 - [x] ScenePicker and SelectionProbe keep the pre-existing CUDA ray-generation parameter-block
