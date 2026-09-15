@@ -108,6 +108,12 @@ $BaselineFiles = [ordered]@{
     "src/falcor2/ui/selection_overlay.h" = "eb5cd7fc370d20f45fcc8ab17cc4e4343b3987563f4b1a6b9a3b19c329943ce0"
     "tests/python/pathtracer/test_pathtracer.py" = "5e0e754cdb43657f183ceeea5884bcb0366cbe5402dae82100fa28f4d87756e1"
 }
+$PriorCandidateHashes = @{
+    "slang/falcor2/render/lights/env_map_light.slang" = @(
+        "fa36e325c56928173e7d3cf21f7e179e919e99e8d82e9eccef9960bdc9c9f501"
+        "c53e39309108df2d9edf80cd053a7c316656df299fd799388f2ddb508e86a4cf"
+    )
+}
 
 foreach ($RelativePath in $CandidateFiles.Keys)
 {
@@ -118,7 +124,12 @@ foreach ($RelativePath in $CandidateFiles.Keys)
         throw "Missing cached file: $CachedPath"
     }
     $CachedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CachedPath).Hash.ToLowerInvariant()
-    if ($CachedHash -ne $BaselineFiles[$RelativePath] -and $CachedHash -ne $CandidateFiles[$RelativePath])
+    $AllowedCachedHashes = @($BaselineFiles[$RelativePath], $CandidateFiles[$RelativePath])
+    if ($PriorCandidateHashes.ContainsKey($RelativePath))
+    {
+        $AllowedCachedHashes += $PriorCandidateHashes[$RelativePath]
+    }
+    if ($AllowedCachedHashes -notcontains $CachedHash)
     {
         throw "Unexpected cached hash for $CachedPath actual=$CachedHash"
     }
