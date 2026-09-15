@@ -14,7 +14,7 @@ public struct EnvMapLight : ILight
 
     public float emitted_power()
     {
-        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
+        Texture2D<float> importance_map = importance_map_texture.unwrap();
         uint3 dims;
         importance_map.GetDimensions(0, dims.x, dims.y, dims.z);
 #ifdef __TARGET_CUDA__
@@ -44,8 +44,7 @@ public struct EnvMapLight : ILight
 
         float2 uv = {};
         float pdf = {};
-        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
-        if (!importance_map_sample(importance_map, next_float2(sg), uv, pdf))
+        if (!importance_map_sample(importance_map_texture, next_float2(sg), uv, pdf))
             return false;
 
         float3 dir_os = oct_to_ndir_equal_area_unorm(uv);
@@ -62,13 +61,18 @@ public struct EnvMapLight : ILight
     {
         float3 dir_os = normalize(mul(transpose(world_from_object), sample.dir_ws));
         float2 uv = ndir_to_oct_equal_area_unorm(dir_os);
-        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
-        return importance_map_eval_pdf(importance_map, uv) * float.INV_FOUR_PI;
+        return importance_map_eval_pdf(importance_map_texture, uv) * float.INV_FOUR_PI;
     }
 };
 
-public bool importance_map_sample(Texture2D<float> importance_map, float2 p, out float2 uv, out float pdf)
+public bool importance_map_sample(
+    DescriptorHandleWAR<Texture2D<float>> importance_map_handle,
+    float2 p,
+    out float2 uv,
+    out float pdf
+)
 {
+    Texture2D<float> importance_map = importance_map_handle.unwrap();
     uint3 dims;
     importance_map.GetDimensions(0, dims.x, dims.y, dims.z);
 #ifdef __TARGET_CUDA__
@@ -149,8 +153,9 @@ public bool importance_map_sample(Texture2D<float> importance_map, float2 p, out
     return true;
 }
 
-float importance_map_eval_pdf(Texture2D<float> importance_map, float2 uv)
+float importance_map_eval_pdf(DescriptorHandleWAR<Texture2D<float>> importance_map_handle, float2 uv)
 {
+    Texture2D<float> importance_map = importance_map_handle.unwrap();
     uint3 dims;
     importance_map.GetDimensions(0, dims.x, dims.y, dims.z);
 #ifdef __TARGET_CUDA__
