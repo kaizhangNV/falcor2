@@ -110,7 +110,17 @@ $BaselineFiles = [ordered]@{
 foreach ($RelativePath in $CandidateFiles.Keys)
 {
     Assert-FileHash $StagingRoot $RelativePath $CandidateFiles[$RelativePath]
-    Assert-FileHash $ReuseBase $RelativePath $BaselineFiles[$RelativePath]
+    $CachedPath = Join-Path $ReuseBase $RelativePath
+    if (-not (Test-Path -LiteralPath $CachedPath -PathType Leaf))
+    {
+        throw "Missing cached file: $CachedPath"
+    }
+    $CachedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CachedPath).Hash.ToLowerInvariant()
+    if ($CachedHash -ne $BaselineFiles[$RelativePath] -and $CachedHash -ne $CandidateFiles[$RelativePath])
+    {
+        throw "Unexpected cached hash for $CachedPath actual=$CachedHash"
+    }
+    Write-Output "Cached SHA256 OK $CachedHash $CachedPath"
 }
 Assert-FileHash $StagingRoot "tests/python/ui/test_selection_overlay.py" "93b8190a24cf4f09fc4ea6992e25f48c7f578535e0676474856241f1c6f8d67a"
 Assert-FileHash $ReuseBase "external/slangpy/slangpy/tests/slangpy_tests/test_raytracing_config.py" "1479c2091801969bb11cb1ee7ac46a5d0b510d61130e10dcef24fe33c1a54635"
