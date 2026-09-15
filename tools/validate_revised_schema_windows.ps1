@@ -316,8 +316,40 @@ foreach ($DeviceName in @("d3d12", "vulkan"))
     & $Python -m pytest "$($SelectionTest)::test_structural_any_hit_matches_legacy_complete_mask" -v -s "--junitxml=$(Join-Path $ResultDir "selectionprobe-parity-$DeviceName.xml")"
     Assert-NativeSuccess "SelectionProbe legacy/structural parity ($DeviceName)"
 
-    & $Python -m pytest "$($PathTracerTest)::test_pathtracer_structural_scatter_matches_legacy" "$($PathTracerTest)::test_pathtracer_structural_analytic_scatter_matches_legacy" -v -s "--junitxml=$(Join-Path $ResultDir "pathtracer-parity-$DeviceName.xml")"
+    $PathTracerLog = Join-Path $ResultDir "pathtracer-parity-$DeviceName.log"
+    & $Python -m pytest "$($PathTracerTest)::test_pathtracer_structural_scatter_matches_legacy" "$($PathTracerTest)::test_pathtracer_structural_analytic_scatter_matches_legacy" -v -s "--junitxml=$(Join-Path $ResultDir "pathtracer-parity-$DeviceName.xml")" 2>&1 |
+        Tee-Object -FilePath $PathTracerLog
     Assert-NativeSuccess "ReferencePathTracer environment and analytic legacy/structural parity ($DeviceName)"
+
+    if ($DeviceName -eq "vulkan")
+    {
+        $DriverErrorLines = @(
+            Get-Content -LiteralPath $PathTracerLog |
+                Where-Object { $_ -match "^\[ERROR\] \(rhi\) driver:" }
+        )
+        $UnexpectedDriverErrors = @(
+            $DriverErrorLines |
+                Where-Object { $_ -notmatch "VUID-VkShaderModuleCreateInfo-pCode-087(40|42)" }
+        )
+        if ($UnexpectedDriverErrors.Count -ne 0)
+        {
+            throw "Vulkan path-tracer run emitted unexpected driver errors: $($UnexpectedDriverErrors -join '; ')"
+        }
+
+        $LssClassification = if ($DriverErrorLines.Count -eq 0) { "not-observed" } else { "known-inherited-inline-lss-diagnostic" }
+        @{
+            classification = $LssClassification
+            driver_error_count = $DriverErrorLines.Count
+            expected_vuids = @(
+                "VUID-VkShaderModuleCreateInfo-pCode-08740"
+                "VUID-VkShaderModuleCreateInfo-pCode-08742"
+            )
+            functional_parity_passed = $true
+            validation_clean = ($DriverErrorLines.Count -eq 0)
+        } |
+            ConvertTo-Json -Depth 3 |
+            Set-Content (Join-Path $ResultDir "pathtracer-vulkan-lss-classification.json")
+    }
 }
 
 Remove-Item Env:SLANGPY_DEVICE -ErrorAction SilentlyContinue
@@ -352,5 +384,5 @@ Get-ChildItem $ResultDir -File | Sort-Object Name | ForEach-Object {
     $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
     Write-Output "Artifact SHA256 $($_.Name): $Hash"
 }
-Write-Output "Final Windows validation passed. D3D12/Vulkan product parity passed; the exact known D3D12 local-root record-data failure was reproduced and classified."
+Write-Output "Final Windows functional validation passed. D3D12/Vulkan product parity passed; the exact known D3D12 local-root record-data failure and any known Vulkan inline-LSS diagnostics were classified."
 exit 0
