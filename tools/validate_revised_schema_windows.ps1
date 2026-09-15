@@ -305,8 +305,8 @@ foreach ($DeviceName in @("d3d12", "vulkan"))
     & $Python -m pytest "$($SelectionTest)::test_structural_any_hit_matches_legacy_complete_mask" -v -s "--junitxml=$(Join-Path $ResultDir "selectionprobe-parity-$DeviceName.xml")"
     Assert-NativeSuccess "SelectionProbe legacy/structural parity ($DeviceName)"
 
-    & $Python -m pytest "$($PathTracerTest)::test_pathtracer_structural_analytic_scatter_matches_legacy" -v -s "--junitxml=$(Join-Path $ResultDir "pathtracer-analytic-parity-$DeviceName.xml")"
-    Assert-NativeSuccess "ReferencePathTracer analytic legacy/structural parity ($DeviceName)"
+    & $Python -m pytest "$($PathTracerTest)::test_pathtracer_structural_scatter_matches_legacy" "$($PathTracerTest)::test_pathtracer_structural_analytic_scatter_matches_legacy" -v -s "--junitxml=$(Join-Path $ResultDir "pathtracer-parity-$DeviceName.xml")"
+    Assert-NativeSuccess "ReferencePathTracer environment and analytic legacy/structural parity ($DeviceName)"
 }
 
 Remove-Item Env:SLANGPY_DEVICE -ErrorAction SilentlyContinue
