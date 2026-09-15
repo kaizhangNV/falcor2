@@ -81,6 +81,7 @@ def _render_mean(
     iterations: int = 1,
     enable_nee: bool = False,
     enable_mis: bool = True,
+    enable_analytic_lights: bool = False,
     enable_environment_light: bool = False,
     env_map_as_background: bool = False,
     max_depth: int = 3,
@@ -92,7 +93,7 @@ def _render_mean(
     node.output_spec = f2.ContainerSpec.texture2d(spy.Format.rgba32_float)
     node.enable_nee = enable_nee
     node.enable_mis = enable_mis
-    node.enable_analytic_lights = False
+    node.enable_analytic_lights = enable_analytic_lights
     node.enable_environment_light = enable_environment_light
     node.max_depth = max_depth
     node.ray_tracing_pipeline_api = pipeline_api
@@ -158,6 +159,67 @@ def test_pathtracer_structural_scatter_matches_legacy(
             enable_nee=True,
             enable_environment_light=True,
             env_map_as_background=True,
+            max_depth=2,
+            visibility_ray_mode=visibility_ray_mode,
+            pipeline_api=pipeline_api,
+        )
+        for pipeline_api in (
+            f2.RayTracingPipelineAPI.legacy,
+            f2.RayTracingPipelineAPI.structural,
+        )
+    }
+
+    legacy = images[f2.RayTracingPipelineAPI.legacy]
+    structural = images[f2.RayTracingPipelineAPI.structural]
+    assert np.isfinite(structural).all()
+    assert structural.max() > 0.0
+    np.testing.assert_allclose(structural, legacy, rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
+@pytest.mark.parametrize(
+    "visibility_ray_mode", [VisibilityRayMode.ray_query, VisibilityRayMode.trace_ray]
+)
+def test_pathtracer_structural_analytic_scatter_matches_legacy(
+    device_type: spy.DeviceType,
+    visibility_ray_mode: VisibilityRayMode,
+) -> None:
+    """Structural scatter preserves point-light visibility without environment-light code."""
+    device = helpers.get_device(device_type, enable_experimental_features=True)
+    if visibility_ray_mode == VisibilityRayMode.ray_query and not device.has_feature(
+        spy.Feature.ray_query
+    ):
+        pytest.skip("Ray-query visibility is not supported by this device")
+
+    scene = f2.Scene.create(device)
+    material = scene.create_material(
+        f2.StandardMaterial,
+        _standard_props(
+            {
+                "base_color_factor": spy.float3(0.8, 0.6, 0.4),
+                "roughness_factor": 1.0,
+                "double_sided": True,
+            }
+        ),
+    )
+    _add_quad(scene, z=0.0, normal_z=-1.0, material=material, size=1.0)
+
+    light_entity = scene.create_entity()
+    light_transform = f2.Transform()
+    light_transform.translation = spy.float3(-0.4, 0.4, -1.0)
+    light_entity.transform = light_transform
+    light = light_entity.create_component(f2.PointLight)
+    light.intensity = spy.float3(2.0, 1.5, 1.0)
+
+    camera = _make_quad_camera(scene, width=16, height=12)
+    images = {
+        pipeline_api: _render_mean(
+            device,
+            scene,
+            camera,
+            iterations=2,
+            enable_nee=True,
+            enable_analytic_lights=True,
             max_depth=2,
             visibility_ray_mode=visibility_ray_mode,
             pipeline_api=pipeline_api,
