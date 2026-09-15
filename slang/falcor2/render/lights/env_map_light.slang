@@ -14,7 +14,7 @@ public struct EnvMapLight : ILight
 
     public float emitted_power()
     {
-        Texture2D<float> importance_map = importance_map_texture.unwrap();
+        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
         uint3 dims;
         importance_map.GetDimensions(0, dims.x, dims.y, dims.z);
 #ifdef __TARGET_CUDA__
@@ -44,7 +44,7 @@ public struct EnvMapLight : ILight
 
         float2 uv = {};
         float pdf = {};
-        Texture2D<float> importance_map = importance_map_texture.unwrap();
+        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
         if (!importance_map_sample(importance_map, next_float2(sg), uv, pdf))
             return false;
 
@@ -62,7 +62,7 @@ public struct EnvMapLight : ILight
     {
         float3 dir_os = normalize(mul(transpose(world_from_object), sample.dir_ws));
         float2 uv = ndir_to_oct_equal_area_unorm(dir_os);
-        Texture2D<float> importance_map = importance_map_texture.unwrap();
+        Texture2D<float> importance_map = DescriptorHandle<Texture2D<float>>(importance_map_texture.handle);
         return importance_map_eval_pdf(importance_map, uv) * float.INV_FOUR_PI;
     }
 };

@@ -96,7 +96,7 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf))
 
 $CandidateFiles = [ordered]@{
     "slang/falcor2/ui/kernels/selection_probe_structural.slang" = "0e9d3e4cf585650b8b52fd231cff93e6aca9dcae076855918e7e2f1843414845"
-    "slang/falcor2/render/lights/env_map_light.slang" = "fa36e325c56928173e7d3cf21f7e179e919e99e8d82e9eccef9960bdc9c9f501"
+    "slang/falcor2/render/lights/env_map_light.slang" = "c53e39309108df2d9edf80cd053a7c316656df299fd799388f2ddb508e86a4cf"
     "src/falcor2/ui/selection_overlay.cpp" = "395250097189ba3dca233c1eae2ba302b3274288932a81e76ac55dd8a054ddcf"
     "src/falcor2/ui/selection_overlay.h" = "b4e3f8fef567d523d28eac83136d14b4e7adc49e878ad0c3d1621d2048a01a67"
     "tests/python/pathtracer/test_pathtracer.py" = "1583fb432472e605129afbafcceb8ffd42c66d4ed4833e8ddefe4892814f1a20"
