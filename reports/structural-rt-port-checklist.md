@@ -21,14 +21,80 @@ historical and are not silently reused.
 - [x] SlangPy branch `codex/dynamic-schema-host-bridge` is published at
   `fc9713b5d93501bded86d9082f4575573f50ef01` (migration commit `93b0e98b...`, based on
   `77205c2f3a5313c772d2df6c3cd19600887e938d`).
-- [x] Falcor branch `codex/dynamic-schema-rt-port` is published at
-  report snapshot `c218a1aa66aa0090d3ed150b158316fe9c35218e`; the code/dependency tuple is
-  `ed005961d49032432c5c0c6a90a52d509e87f79f`, and the main migration is
+- [x] Falcor branch `codex/dynamic-schema-rt-port` has validation code head
+  `6502d2d759e88bfced4af03a1a86423af8167a43`. The focused analytic-light RPT regression is
+  `e300c18c74144b82585908b212e20c9150eb86d6`; the reusable Windows validator was added in
+  `3229faa...` and extended through `9d0706c...`; the D3D environment-handle workaround is
+  finalized in `278cbfb...`, followed by validator hardening in `9acbf18...`;
+  `1ea1cf9...` returns success after the expected D3D diagnostic is classified, and `6502d2d...`
+  classifies the inherited Vulkan LSS diagnostics while rejecting unexpected driver errors;
+  and the SelectionProbe Metal-record workaround is `6131bc8fe3ea790de39ef5eba1c99cea199a8ec1`.
+  The dependency integration is `ed005961d49032432c5c0c6a90a52d509e87f79f`, and the main migration is
   `042ba5d58a1e0c3ac33f01056bfbfd0066de6b16` (based on `b151bebcc5b7406ba9604e867569bdace6fe682a`).
 - [x] Commit and push SlangPy; point the Falcor working tree at exact commit `fc9713b5...`.
 - [x] Commit and push Falcor with the final SlangPy gitlink.
-- [x] Verify a fresh published validation snapshot is clean and resolves the Falcor, SlangPy, and
-  nested slang-rhi revisions to `b71dce2...`, `fc9713b5...`, and `5661193d...` respectively.
+- [x] Verify the validation code head resolves the Falcor, SlangPy, and nested slang-rhi revisions
+  to `6502d2d...`, `fc9713b5...`, and `5661193d...` respectively.
+
+## Changed-file inventory
+
+This lists every project-authored file in the revised port. The Falcor entries are the exact delta
+from baseline `b151beb...` through the validation code head; the dependency entries cover the
+integration commits named here rather than unrelated upstream submodule history. Detailed behavior
+and tests are checked below.
+
+- [x] Falcor Python and dependency: `examples/pathtracer/simple.py`,
+  `falcor2/minitracer/pathtracer.py`, `falcor2/rendernodes/reference_pathtracer_node.py`, and the
+  `external/slangpy` gitlink.
+- [x] Falcor shaders: `slang/falcor2/minitracer/renderers/simplepathtracer_structural.slang`,
+  `slang/falcor2/minitracer/scene/core.slang`, `slang/falcor2/render/lights/env_map_light.slang`,
+  `slang/falcor2/rendernodes/reference_pathtracer.slang`,
+  `slang/falcor2/rendernodes/reference_pathtracer_structural.slang`,
+  `slang/falcor2/ui/kernels/scene_picker_structural.slang`, and
+  `slang/falcor2/ui/kernels/selection_probe_structural.slang`.
+- [x] Falcor C++/bindings: `src/falcor2/render/ray_tracing_setup.{h,cpp}`,
+  `src/falcor2/ui/scene_picker.cpp`, `src/falcor2/ui/selection_overlay.{h,cpp}`, and
+  `src/falcor2_ext/render/ray_tracing_setup.cpp`.
+- [x] Falcor tests/tool: `tests/native/render/test_scene.cpp`,
+  `tests/python/pathtracer/test_pathtracer.py`,
+  `tests/python/pathtracer/test_reference_pathtracer_pipeline_api.py`,
+  `tests/python/pathtracer/test_simple_sample.py`, `tests/python/ui/test_scene_picker.py`, and
+  `tools/validate_revised_schema_windows.ps1`.
+- [x] Falcor reports: `reports/structural-rt-port-plan.md`,
+  `reports/structural-rt-port-checklist.md`, `reports/structural-rt-phase3-reproduction.md`, and
+  `reports/structural-rt-phase4-reproduction.md`.
+- [x] SlangPy bridge/configuration: `.agents/execplans/dynamic-structural-rt-schema-bridge.md`,
+  `.gitmodules`, the `external/slang-rhi` gitlink, `slangpy/core/{calldata,function}.py`, and
+  `slangpy/slang/staticarray.slang`.
+- [x] SlangPy native layer: `src/sgl/device/fwd.h`, `pipeline.cpp`, `print.slang`,
+  `raytracing.{h,cpp}`, `reflection.{h,cpp}`, and `types.h`; plus
+  `src/slangpy_ext/device/raytracing.cpp`, `reflection.cpp`, and `shader.cpp`.
+- [x] SlangPy tests: `slangpy/tests/slangpy_tests/test_raytracing.py`,
+  `slangpy/tests/slangpy_tests/test_raytracing_config.py`,
+  `slangpy/tests/slangpy_tests/test_raytracing_structural.slang`, and
+  `tests/sgl/device/test_structural_raytracing.cpp`.
+- [x] slang-rhi build/API/shared files: `CMakeLists.txt`, `include/slang-rhi.h`,
+  `src/rhi-shared.{h,cpp}`, and `src/debug-layer/debug-device.cpp`.
+- [x] slang-rhi backend files: `src/d3d12/d3d12-{command,device,shader-table}.cpp`,
+  `src/d3d12/d3d12-shader-table.h`, `src/vulkan/vk-{device,shader-table}.cpp`,
+  `src/vulkan/vk-shader-table.h`, `src/cuda/cuda-device.cpp`, and
+  `src/cuda/optix-api.h` and `src/cuda/optix-api-impl.cpp`.
+- [x] slang-rhi tests: `tests/test-ray-tracing-common.h`,
+  `tests/test-ray-tracing-hitobject-intrinsics.{cpp,slang}`,
+  `tests/test-ray-tracing-intrinsics.{cpp,slang}`,
+  `tests/test-ray-tracing-shader-record-data.slang`, and `tests/test-shader-table.cpp`.
+  Together these are the full file set for application-record transport (`6bea990...`) and the
+  OptiX callable lookup/stack fixes (`e6525c2...`, `5661193...`).
+- [x] Slang descriptor-lowering fixes `c8fbc736...`/`cdecb750...` change
+  `source/slang/slang-emit.cpp`, `source/slang/slang-ir-metal-structural-ray-tracing.cpp`,
+  `source/slang/slang-ir-structural-ray-tracing.{h,cpp}`, and
+  `tests/ray-tracing-2/target/portable/trace-call.slang`.
+- [x] Further Slang fixes authored for this integration: `f0ae84e7...` changes
+  `prelude/slang-cuda-prelude.h`, `tests/ray-tracing-2/runtime/shaders/multiple-payloads.slang`, and
+  `tools/gfx-unit-test/structural-ray-tracing/structural-ray-tracing-test-util.cpp`;
+  `29969e72...` changes `source/slang/slang-check-structural-ray-tracing.cpp`,
+  `tests/ray-tracing-2/frontend/module/visibility-unrelated-generics.slang`, and
+  `tests/ray-tracing-2/frontend/module/visibility_unrelated_generics_lib.slang`.
 
 ## Historical provenance
 
@@ -112,7 +178,9 @@ They do not prove the revised schema implementation.
 ## slang-rhi
 
 - [x] Add owned application bytes to native shader records.
-- [x] Support application bytes for hit, miss, and callable records on D3D12, Vulkan, and OptiX.
+- [x] Transport application bytes in hit, miss, and callable records on D3D12, Vulkan, and OptiX.
+  Vulkan and OptiX stages can read them. DXR rejects state creation for a live non-void `Record`
+  because the pipeline lacks local root signatures; this is recorded below.
 - [x] Validate record counts, sizes, alignment/stride, and data ownership in the shared layer and
   backend implementations.
 - [x] Add shader-table record-data coverage.
@@ -196,7 +264,7 @@ Primary touched areas:
 - [x] Add `StructuralShaderRecord` with schema type name plus application bytes.
 - [x] Add `StructuralRayDesc` for one miss record and per-geometry hit records.
 - [x] Reflect the required physical record counts from the scene policy.
-- [x] Flatten hit records as `geometry_type * ray_type_count + ray_type`.
+- [x] Flatten hit records as `geometry_row * ray_type_count + ray_type`.
 - [x] Preserve empty ray/geometry combinations instead of compacting the table.
 - [x] Forward hit, miss, and callable application bytes when creating the shader table.
 - [x] Retain structural materialized entry points until linking completes.
@@ -210,7 +278,7 @@ Primary touched areas:
 
 - `src/falcor2/render/ray_tracing_setup.{h,cpp}`;
 - `src/falcor2_ext/render/ray_tracing_setup.cpp`; and
-- `src/falcor2/ui/scene_picker.cpp` and `src/falcor2/ui/selection_overlay.cpp`.
+- `src/falcor2/ui/scene_picker.cpp` and `src/falcor2/ui/selection_overlay.{h,cpp}`.
 
 ## Sample checklist
 
@@ -243,13 +311,20 @@ Files: `slang/falcor2/ui/kernels/scene_picker_structural.slang` and
 - [x] Define `SelectionProbeProgramSchema` with triangle any-hit and miss entries.
 - [x] Preserve ignore-hit and accept/end-search behavior.
 - [x] Build its physical table through `SceneRayTracingSetup::create_structural()`.
+- [x] Carry the Metal selection-bitmap GPU address and bit count in 16 bytes of host-owned
+  application record data, because generated Metal candidate functions cannot read ordinary
+  globals. With the 16-byte system header, the final Metal hit-record stride is 32 bytes. Keep the
+  existing global-buffer path on D3D12/Vulkan/CUDA.
+- [x] Coarsely rebuild the Metal pipeline/table after selection changes or buffer reallocation so
+  the record address/count cannot go stale. Defer table-only reconstruction as non-gating cache
+  work; portable pipelines are not invalidated.
 - [x] Leave its inline `RayQuery` path unchanged.
 - [x] Retain the CUDA ray-generation global parameter-block workaround.
 - [x] Re-run exact selection-mask parity on a layered non-opaque Vulkan scene. This exercises both
   `ignoreHit()` and accept/end-search in the structural any-hit stage.
 
 Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
-`src/falcor2/ui/selection_overlay.cpp`.
+`src/falcor2/ui/selection_overlay.{h,cpp}`.
 
 ### ReferencePathTracer
 
@@ -266,6 +341,9 @@ Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
 - [x] Map `SchedulingMode.ser` to the simple scheduler with a warning.
 - [x] Re-run legacy/structural Vulkan output parity for both inline `RayQuery` and pipeline
   `TraceRay` visibility.
+- [x] Add a point-lit, environment-free legacy/structural regression for both visibility modes.
+  Falcor still composes every `ILight` witness, so D3D12 also needs the explicit descriptor-handle
+  construction workaround below even when this fixture disables environment lighting at runtime.
 - [x] Verify the real composed program supplies `ILight`/`IMaterial` conformances and materializes
   both payload partitions. A standalone probe also succeeds after composing `ConstantLight` and
   `StandardMaterial` explicitly.
@@ -273,10 +351,13 @@ Files: `slang/falcor2/ui/kernels/selection_probe_structural.slang` and
   geometry is currently opaque and `OpacityEvaluator` is `AcceptAll`; the current scene therefore
   does not exercise RPT `ignoreHit()`.
 
-Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
-`falcor2/rendernodes/reference_pathtracer_node.py`.
+Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang`,
+`falcor2/rendernodes/reference_pathtracer_node.py`, and
+`tests/python/pathtracer/test_pathtracer.py`.
 
-## Current test record
+## Validation record
+
+### Historical `cdecb750...` implementation baseline
 
 - [x] At Slang `cdecb750...`, trace-call passed 5/5, portable passed 114/114, Cornell direct DXIL
   compiled cleanly, and Cornell legacy/structural output was byte-identical on Vulkan and OptiX.
@@ -289,11 +370,6 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
   geometry-major, repeated-record, and exact-byte assertions.
 - [x] Falcor configuration passed 17/17; Vulkan legacy/structural runtime parity passed for all
   four consumers and for both RPT visibility modes.
-- [x] At Slang source revision `29969e72...`, rerun the focused SGL bridge (121/121 assertions) and
-  SlangPy configuration/runtime cases (21/21), plus the six Vulkan consumer cases for MiniTracer,
-  ScenePicker, SelectionProbe, and ReferencePathTracer (6/6). The compiler version string remains
-  generated from the earlier configure step, so the source revision and loaded library path are
-  recorded instead of mislabeling that string.
 - [x] Final-checkout slang-rhi validation passed 17 focused Vulkan/CUDA cases and 956 assertions;
   its isolated GCC Release build completed 221/221 build steps against Slang `cdecb750...`.
 - [x] Reproduce the CUDA failure at the `cdecb750...` implementation baseline: both unchanged legacy
@@ -302,26 +378,95 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Record the Linux Vulkan adapter as NVIDIA RTX PRO 6000 Blackwell Workstation Edition.
 - [x] Record compiler fallback: Clang built production libraries, but Clang 17 rejected existing
   alias-template deduction in unrelated test files; GCC linked and ran the native tests.
-- [ ] Record cross-platform worker run IDs, durations, and artifacts when those gates run.
+
+### Final `29969e72...` / `6502d2d...` validation tuple
+
+- [x] At Slang source revision `29969e72...`, rerun the focused SGL bridge (121/121 assertions) and
+  SlangPy configuration/runtime cases (21/21), plus the six Vulkan consumer cases for MiniTracer,
+  ScenePicker, SelectionProbe, and ReferencePathTracer (6/6). The compiler version string remains
+  generated from the earlier configure step, so the source revision and loaded library path are
+  recorded instead of mislabeling that string.
+- [x] After the SelectionProbe Metal record workaround, direct profile-free `-target metal`
+  production generation passed after formatting (21,339 bytes, SHA-256
+  `2f74bc18adfa464d42ce50c2533f15b217f98d351f674fc74d33f79fb83e5cae`), direct SPIR-V generation
+  passed, the limiter-capped Linux `falcor2_ext` rebuild passed, and both layered-quad Vulkan parity
+  and structural record-byte tests passed (1/1 each).
+- [x] macOS run
+  `falcor2-revised-schema-final-9f87e21-slang29969-20260914-r4-macos-clt-continuation`
+  passed in 546.816 seconds. Its artifacts include the source tuple, logs, schema JSON, generated
+  MSL, and SHA-256 manifests under the run's `artifacts/macos-arm64-metal-compile-materialize/`
+  directory.
+- [x] Final SelectionProbe macOS continuation
+  `falcor2-selectionprobe-metal-64b195c-29969-20260914-r1` passed in 9.750 seconds against Falcor
+  `64b195c...` and Slang `29969e72...`. The production shader emitted 21,339 bytes of MSL (SHA-256
+  `2f74bc18adfa464d42ce50c2533f15b217f98d351f674fc74d33f79fb83e5cae`) with the expected SBT
+  record load and `uint device*` dereference. Reflection/materialization/linking passed with 16
+  bytes of application data, a 32-byte final hit stride, and six physical hit records.
+- [x] Windows comprehensive run `f2-r4c3-win-9f87-cached` supplied the retained MiniTracer and
+  ScenePicker evidence: MiniTracer 1/1 and ScenePicker 2/2 passed on both D3D12 and Vulkan. Those
+  consumers were unchanged by the later SelectionProbe, ReferencePathTracer, environment-handle,
+  and validator commits. The overall older run is not labeled passing because its pre-workaround
+  environment RPT case and the generic D3D record canary failed.
+- [x] Final Windows run `f2-final-win-6502d2d-29969-r8` completed functional validation
+  successfully in 133.632 seconds against Falcor
+  `6502d2d...`, SlangPy `fc9713b5...`, Slang `29969e72...`, and slang-rhi `5661193d...`. The
+  worker used one CMake project, `--parallel 1`, and `/MP8`/`CL_MPCount=8`. Configuration passed
+  19/19; SelectionProbe parity passed 1/1 on both D3D12 and Vulkan; ReferencePathTracer's
+  environment and analytic fixtures passed 4/4 on each backend across inline and pipeline
+  visibility; and Vulkan application-record transport passed 1/1. The run log, source tuple,
+  GPU/driver data,
+  XML results, expected-D3D-gap classification, and SHA-256 manifest are under local-build-farm run
+  `f2-final-win-6502d2d-29969-r8` and the worker's `revised-schema-final-windows-results` directory.
+- [x] Reproduce the generic D3D12 non-void-record failure in that final run and accept it only after
+  matching the exact `CreateStateObject`/unbound `UINT_MAX` CBV diagnostic. This expected canary is
+  not counted as D3D record-data support.
+- [x] Record that Windows Vulkan output parity passed but the inline visibility runs emitted
+  validation VUID 08740/08742. The pre-existing `RayQuerySceneIntersector` compiles stale
+  hardware-LSS query helpers whose inline SPIR-V declares both LSS and sphere capabilities on the
+  RTX 3500 Ada runner, which lacks those features. The final classifier recorded 16 expected
+  driver diagnostics, `functional_parity_passed=true`, and `validation_clean=false`; its artifact
+  SHA-256 is `26337696a1f364858829c78595b5273efc8ec0c2f65b0fbddd862f36dc4db42f`. This is classified
+  below. The retained ScenePicker inline lane emitted the same inherited VUIDs; the count of 16 is
+  specifically from the final RPT classifier.
 
 ## Cross-platform acceptance
 
 - [x] Linux Vulkan: SGL/SlangPy tests and all four Falcor consumers.
-- [x] Linux CUDA/OptiX attempted: unchanged legacy and structural SlangPy canaries both crash at
-  dispatch, so this is recorded as an inherited backend/host blocker rather than an API regression.
-- [ ] Windows D3D12: SGL/SlangPy tests and all four Falcor consumers.
-- [ ] Windows Vulkan: SGL/SlangPy tests and all four Falcor consumers.
+- [x] Linux CUDA/OptiX attempted at the `cdecb750...` baseline: unchanged legacy and structural
+  SlangPy canaries both crash at dispatch, so this is recorded as an inherited backend/host blocker
+  rather than an API regression.
+- [x] Windows D3D12: all four Falcor consumers have functional legacy/structural parity coverage.
+  Generic non-void shader-record data remains unsupported and is excluded from this claim.
+- [x] Windows Vulkan: all four Falcor consumers have functional legacy/structural parity coverage.
+  Inline-visibility output passes, but the inherited LSS validation diagnostics mean that path is
+  not validation-clean.
 - [x] Keep Windows CUDA/OptiX outside this focused D3D12/Vulkan acceptance lane; the compiler and
   Cornell OptiX path have separate coverage.
-- [ ] macOS Metal: composed-program schema reflection and MSL generation.
-- [ ] macOS Metal: SGL adapter tests plus supported Falcor compile/materialization checks; no
-  runtime claim.
+- [x] macOS Metal: SGL adapter passed 123/123 assertions; all four real Falcor schema bindings were
+  created, applicable standalone entry points were materialized, and the programs linked. Folded
+  any-hit/intersection candidates were intentionally not materialized separately.
+  ReferencePathTracer was explicitly composed with `ILight -> ConstantLight` and
+  `IMaterial -> StandardMaterial`.
+- [x] macOS Metal: direct Slang-to-MSL generation passed for 3/3 revised-schema compiler fixtures.
+  The three test-harness invocations were ignored by their directives (0/0), so they are not
+  counted as passes; the direct compiler outputs and hashes are the evidence.
+- [x] macOS Metal: generate production SelectionProbe MSL from its final relevant code head
+  `64b195c...` and verify its 16-byte application-data ABI, 32-byte hit stride, record-header
+  access, bounds check, and bitmap device-pointer load. Later commits do not change those
+  SelectionProbe sources; broader final-head Metal validation was not rerun.
+- [ ] macOS Metal: emit complete production MSL for MiniTracer, ScenePicker, and ReferencePathTracer
+  and compile all generated MSL to AIR. This is non-gating: Falcor has no Metal pipeline runtime and
+  production codegen remains incomplete; MiniTracer/ReferencePathTracer also contain
+  target-incompatible Falcor logic, and the runner has no licensed full-Xcode `metal` executable.
 - [x] Metal runtime is explicitly non-gating because Falcor has no pipeline RT runtime there.
-- [ ] Update the local build-farm recipe to Slang `29969e72...`, the Falcor validation candidate,
-  and the eight-job cap.
+- [x] Update the local build-farm recipe to Slang `29969e72...`, Falcor `6502d2d...`, exact SlangPy
+  and slang-rhi pins, source checksums, and native build caps of at most eight jobs. The tracked
+  entry point is `tools/validate_revised_schema_windows.ps1`; the machine-local recipe only supplies
+  host paths and exact revisions.
 - [x] Run `git diff --check` in the outer and nested worktrees and confirm the current reports make
   no active claim based on the superseded shader-owned table contract.
-- [x] Run the full outer pre-commit suite.
+- [x] The full outer pre-commit suite passed at `1ea1cf9...`; the complete applicable touched-file
+  hook set also passed after the final PowerShell/report changes at `6502d2d...`/publication head.
 
 ## Gap and workaround classification
 
@@ -360,11 +505,47 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
   Explicit composition and normal RPT runtime both pass; no shader workaround is required.
 - [x] Defer high-level SlangPy pipeline/table cache separation. Host-only physical record changes
   currently relink an unchanged pipeline; this is non-blocking integration/performance work.
+- [x] Classify D3D12 shader-record reads as a backend implementation gap. Slang currently emits
+  the synthesized `ShaderRecord` cbuffer without a finite register/space, and slang-rhi creates no
+  DXR local root signature or export association. Record bytes reach the shader table, but DXR
+  rejects pipeline state creation for a live non-void `Record` binding. The current Falcor
+  consumers avoid this path: their portable records are void/unused, and SelectionProbe reads
+  application data only in its Metal branch. A complete fix needs coordinated compiler binding/
+  reflection, per-export record ABI metadata, local root constants/signatures, hit-group/export
+  associations, and D3D runtime regressions. This is not a shader source/API design gap.
+- [x] Classify the D3D12 ReferencePathTracer environment-light failure as orthogonal to structural
+  RT. The source pattern predates this port, and the first legacy render failed before structural
+  dispatch because specialization of `DescriptorHandleWAR<Texture2D<float>>.unwrap()` produced a
+  `Texture2D<float4>` call argument. Falcor now keeps the descriptor as ordinary bytes across the
+  helper boundary and performs `.unwrap()` inside each helper, avoiding the mismatched
+  typed-resource call. This is a compiler/codegen compatibility workaround, not a shader-API gap.
+- [x] Classify the Windows Vulkan LSS validation diagnostics as inherited inline-ray integration,
+  not structural pipeline behavior. `RayQuerySceneIntersector` and its hardware-LSS calls predate
+  this port (`a1dd414...`) and are compiled for triangle-only scenes even when the device has no NV
+  LSS feature. Both legacy and structural RPT modes emit VUID 08740/08742 when visibility uses
+  `ray_query`; both `trace_ray` parametrizations are clean. Output parity still passes, but the
+  inline result is not validation-clean. The current workaround is pipeline visibility. A proper
+  Falcor fix should use a link-time/static specialization tied to the actual hardware-LSS scene
+  mode; a runtime branch cannot remove illegal SPIR-V capabilities. Falcor's compatibility helpers
+  should also migrate to Slang's now-built-in capability-annotated LSS accessors: the stale inline
+  SPIR-V helper currently overdeclares the sphere capability for an LSS positions/radii query. None
+  of this requires a change to the revised shader API.
 - [x] Classify the observed CUDA dispatch crash as inherited: it reproduces in unchanged legacy and
   structural canaries at the `cdecb750...` baseline. Root-cause work remains a backend/test-host
   task.
-- [x] Metal-only shader branches are deliberately incomplete Falcor hit-data implementations. Raw
-  Slang schema/MSL codegen is compile evidence, not runtime correctness.
+- [x] Record the v1 Metal candidate-data limitation precisely. Generated _AnyHit_/_Intersection_
+  functions cannot read ordinary globals. SelectionProbe uses 16 bytes of plain application data
+  in a 32-byte hit record to carry a resident bitmap's GPU address and logical bit count; this emits
+  real MSL and avoids shader-side SBT positions. The code retains and still binds the bitmap;
+  slang-rhi normally tracks it through a Metal residency set, with per-encoder `useResources` on
+  paths that do not use residency sets. No Metal pipeline dispatch validated this path.
+  D3D12/Vulkan/CUDA continue to use the
+  global resource and receive zeroed application data. Rebuilding the Metal pipeline/table after
+  selection changes or buffer reallocation is an integration workaround, not an API gap. The
+  supported/default Metal MiniTracer path remains inline `RayQuery`; its structural pipeline path is
+  not validated or claimed.
+  ReferencePathTracer's Metal branch currently omits opacity behavior. Schema reflection/
+  materialization and compiler-fixture MSL generation are not Falcor Metal runtime evidence.
 - [x] ScenePicker and SelectionProbe keep the pre-existing CUDA ray-generation parameter-block
   workaround for `shader-slang/slang#10188`.
 - [x] The host owns payload/primitive compatibility of reachable records. The adapter validates
@@ -377,7 +558,8 @@ Files: `slang/falcor2/rendernodes/reference_pathtracer_structural.slang` and
 - [x] Replace obsolete phase reproduction recipes with superseded notices.
 - [x] Preserve verified branch and commit provenance in this ledger.
 - [x] Record published SlangPy commit `fc9713b5d93501bded86d9082f4575573f50ef01`.
-- [x] Record Falcor code/dependency tuple `ed005961d49032432c5c0c6a90a52d509e87f79f`.
+- [x] Record validated Falcor code head `6502d2d759e88bfced4af03a1a86423af8167a43`
+  and dependency-integration commit `ed005961d49032432c5c0c6a90a52d509e87f79f`.
 - [x] Add the exact local Linux test matrix and classifications after the final revision rerun.
 - [x] Add a concise runnable multi-payload command:
 

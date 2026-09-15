@@ -1,55 +1,71 @@
-# Falcor 2 Structural Ray Tracing Port
+# Falcor 2 Revised Structural Ray Tracing Port
 
 **Updated:** 2026-09-14
 
-**Status:** port implemented; Linux passed; final Windows/macOS validation is pending.
+**Outcome:** the scoped triangle pipeline port is complete. MiniTracer, ScenePicker,
+SelectionProbe, and ReferencePathTracer run with the revised API on Linux Vulkan and Windows
+D3D12/Vulkan. Metal is compile/materialization-only because Falcor has no Metal pipeline-RT
+runtime. No shader-API design gap was found for this scope; one D3D12 backend gap remains for
+non-void shader-record data.
 
-## Pinned sources
+## Revisions
 
 | Component | Revision |
 | --- | --- |
 | Design | `kaizhangNV/slang:archive/structural-rt-with-design-docs-20260825` at `524aa279...` |
-| Slang | `kaizhangNV/slang:draft/unified-pipeline-rt-api` at `29969e72bacd308672b37e23a1b2ad7ea88c5ee2` ([PR #12691](https://github.com/shader-slang/slang/pull/12691)) |
+| Slang | `kaizhangNV/slang:draft/unified-pipeline-rt-api` at `29969e72...` ([PR #12691](https://github.com/shader-slang/slang/pull/12691)) |
 | slang-rhi | `kaizhangNV/slang-rhi:codex/structural-rt-rhi-combined` at `5661193d...` |
-| SlangPy | `codex/dynamic-schema-host-bridge` at `fc9713b5...` |
-| Falcor | `codex/dynamic-schema-rt-port`; report snapshot `c218a1aa...`, implementation `ed005961...` |
+| SlangPy | `kaizhangNV/slangpy:codex/dynamic-schema-host-bridge` at `fc9713b5...` |
+| Falcor | `kaizhangNV/falcor2:codex/dynamic-schema-rt-port`; validation code head `6502d2d7...` |
 
-The [change ledger](structural-rt-port-checklist.md) has the complete file and test checklist.
+The [change ledger](structural-rt-port-checklist.md) is the complete implementation and test
+checklist.
 
-## Design used by the port
+## Ported scope
 
-Shaders declare an `ITraceProgramSchema`: allowed hit groups, miss shaders, callables, payload
-partitions, primitive types, and record types. The host owns SBT record count, order, empty slots,
-repeated programs, and record bytes. A reflected function index selects compiler code inside a
-payload partition; it is not a physical SBT index.
-
-The host must keep trace selectors and TLAS contributions compatible with each record's payload and
-primitive types. This is the proposal's runtime safety boundary.
-
-SlangPy/SGL accepts `trace_program_schema`, ordered `structural_*_types`, and matching record data.
-It validates the schema, materializes entry points, and forwards exact records to slang-rhi. Falcor
-maps its scene policy to geometry-major records:
+Shaders declare an `ITraceProgramSchema` containing programs, payload partitions, primitives, and
+record types. The host owns physical SBT order, empty/repeated slots, and application bytes. Falcor
+writes hit records in geometry-major order:
 
 ```text
-hit record = geometry_type * ray_type_count + ray_type
+hit record = geometry_row * ray_type_count + ray_type
 ```
 
-MiniTracer, ScenePicker, SelectionProbe, and ReferencePathTracer are ported. Legacy pipeline and
-inline `RayQuery` paths remain available. ReferencePathTracer uses `PathPayload` and
-`VisibilityPayload` in one schema.
+Function indices identify schema programs, not SBT slots. The host must align TLAS contributions
+and ray selectors with compatible record payload and primitive types.
+
+Legacy and inline `RayQuery` paths remain. ReferencePathTracer puts `PathPayload` and
+`VisibilityPayload` in one schema and supports inline or pipeline visibility.
 
 ## Validation
 
-On Linux:
+| Platform | Result |
+| --- | --- |
+| Linux | Slang RT 384/384, SGL 121/121, SlangPy 21/21, and six focused Vulkan consumer/parity cases passed. |
+| Windows | Run `f2-r4c3-win-9f87-cached` covers unchanged MiniTracer/ScenePicker on D3D12/Vulkan. Final run `f2-final-win-6502d2d-29969-r8` completed functional validation in 133.632 s: SelectionProbe 1/1 and ReferencePathTracer 4/4 on each backend, plus Vulkan record-byte transport 1/1. |
+| macOS | At the relevant `9f87e21...`/`64b195c...` heads, SGL Metal bridge 123/123 and all four Falcor schemas reflected/linked. Production SelectionProbe emitted 21,339 bytes of MSL with a 32-byte hit-record stride. |
 
-- at Slang `29969e72...`, `ray-tracing-2` passed 384/384, including the new unrelated
-  SlangPy-shaped-generics regression;
-- at the same compiler revision, ReferencePathTracer Vulkan legacy/structural parity passed in both
-  inline-visibility and pipeline-visibility modes (3/3 cases); and
-- the earlier lanes passed at Slang `cdecb750...`; at `29969e72...`, SGL passed 121/121 assertions,
-  SlangPy passed 21/21 cases, and all four Falcor consumers passed 6/6 cases.
+The Windows D3D record-data canary is an intentional expected failure described below. Vulkan
+image/output parity passed, but the inline visibility variant is not validation-clean: the shared
+pre-existing `RayQuerySceneIntersector` compiles stale LSS helpers whose inline SPIR-V declares LSS
+and sphere capabilities on a device without them. This affects both legacy and structural modes
+when RPT visibility uses `ray_query`, as well as ScenePicker's inline path. The `trace-ray` RPT
+sample below avoids it.
 
-Run the interactive multi-payload sample with:
+The macOS runner lacks a licensed full-Xcode Metal compiler, so MSL-to-AIR and Metal rendering were
+not tested.
+
+## Gaps and workarounds
+
+| Item | Classification and current handling |
+| --- | --- |
+| D3D12 non-void `Context.Record` | Backend gap. Slang assigns no finite record-cbuffer binding; slang-rhi lacks a DXR local root signature/export association. DXR rejects state creation. Falcor's D3D consumers avoid this path. |
+| Vulkan LSS diagnostics | Inherited inline-ray issue. Stale LSS helpers declare unsupported LSS/sphere capabilities in triangle-only SPIR-V. Use pipeline visibility; a future link-time scene-mode specialization should omit those helpers. |
+| Metal candidate data | Metal any-hit/intersection candidates cannot read ordinary globals. SelectionProbe carries its bitmap address/count in host record data and rebuilds the Metal pipeline/table when it changes. |
+| D3D environment texture | Pre-existing codegen issue. Passing the descriptor wrapper between helpers and unwrapping locally avoids a typed-resource mismatch that first failed in legacy. |
+| Deferred features | SER uses the simple scheduler; structural LSS scenes are rejected; helper callables and richer RPT opacity remain future work. SlangPy relinking after host-only record edits is performance debt. |
+
+## Run the sample
 
 ```bash
 cd /home/zhangkai/Documents/slangwork/slang-core-ecosys/falcor2
@@ -58,23 +74,4 @@ export PYTHONPATH="$PWD:$PWD/external/slangpy"
   --pipeline-api structural --visibility-mode trace-ray
 ```
 
-The viewport reports frame rate; press Escape to exit.
-
-## Gaps and workarounds
-
-No shader API design gap was found for triangle pipeline tracing without SER.
-
-- **SER/LSS:** intentionally unsupported. SER selects the simple scheduler; structural scenes with
-  hardware LSS are rejected.
-- **Metal:** Falcor has no pipeline-RT runtime. Validation is compile/materialization only.
-- **Dynamic conformances:** a standalone RPT module is incomplete. Falcor supplies
-  `ILight`/`IMaterial` conformances during composition. Explicit composition and normal RPT runtime
-  pass; this is not an API gap.
-- **Compiler integration bug:** linkage-wide structural generic checks broke unrelated modules.
-  Slang `29969e72...` scopes them to API importers and adds a regression. No workaround remains.
-- **Caching:** changing only host records currently relinks the high-level SlangPy pipeline. This is
-  deferred performance work; correctness is unaffected.
-- **RPT opacity:** BLAS entries are opaque and `OpacityEvaluator` is `AcceptAll`. SelectionProbe
-  validates ignore/accept behavior; RPT-specific opacity remains inherited Falcor work.
-- **CUDA:** legacy and structural canaries both segfault on the current Linux host, so this remains
-  an inherited backend/host issue rather than a structural-only regression.
+The interactive viewport reports FPS; press Escape to exit.
