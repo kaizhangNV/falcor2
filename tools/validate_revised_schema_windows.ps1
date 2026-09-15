@@ -251,8 +251,8 @@ bindings = module.structural_ray_tracing_bindings(
     hit_types,
     miss_types,
     [],
-    [record, b"", b"", b"", b"", b""],
-    [b"", b"", b""],
+    [list(record), [], [], [], [], []],
+    [[], [], []],
     [],
 )
 assert len(bindings.hit_group_names) == 6
