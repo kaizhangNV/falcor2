@@ -353,3 +353,4 @@ Get-ChildItem $ResultDir -File | Sort-Object Name | ForEach-Object {
     Write-Output "Artifact SHA256 $($_.Name): $Hash"
 }
 Write-Output "Final Windows validation passed. D3D12/Vulkan product parity passed; the exact known D3D12 local-root record-data failure was reproduced and classified."
+exit 0
