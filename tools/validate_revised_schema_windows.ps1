@@ -96,12 +96,14 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf))
 
 $CandidateFiles = [ordered]@{
     "slang/falcor2/ui/kernels/selection_probe_structural.slang" = "0e9d3e4cf585650b8b52fd231cff93e6aca9dcae076855918e7e2f1843414845"
+    "slang/falcor2/render/lights/env_map_light.slang" = "fa36e325c56928173e7d3cf21f7e179e919e99e8d82e9eccef9960bdc9c9f501"
     "src/falcor2/ui/selection_overlay.cpp" = "395250097189ba3dca233c1eae2ba302b3274288932a81e76ac55dd8a054ddcf"
     "src/falcor2/ui/selection_overlay.h" = "b4e3f8fef567d523d28eac83136d14b4e7adc49e878ad0c3d1621d2048a01a67"
     "tests/python/pathtracer/test_pathtracer.py" = "1583fb432472e605129afbafcceb8ffd42c66d4ed4833e8ddefe4892814f1a20"
 }
 $BaselineFiles = [ordered]@{
     "slang/falcor2/ui/kernels/selection_probe_structural.slang" = "ad19617fe0b0c7d724a520d0050efe4a1b374fbf8811e17bf8035195b6e92dcb"
+    "slang/falcor2/render/lights/env_map_light.slang" = "c1033214b0461e8558630d77c5541449165952e19cb1e250d459f9f169a93949"
     "src/falcor2/ui/selection_overlay.cpp" = "9fc14515698bdc2e7fc3b2f85c43e91b07331bb4d42db4becbf32eadae018f52"
     "src/falcor2/ui/selection_overlay.h" = "eb5cd7fc370d20f45fcc8ab17cc4e4343b3987563f4b1a6b9a3b19c329943ce0"
     "tests/python/pathtracer/test_pathtracer.py" = "5e0e754cdb43657f183ceeea5884bcb0366cbe5402dae82100fa28f4d87756e1"

@@ -44,7 +44,8 @@ public struct EnvMapLight : ILight
 
         float2 uv = {};
         float pdf = {};
-        if (!importance_map_sample(importance_map_texture.unwrap(), next_float2(sg), uv, pdf))
+        Texture2D<float> importance_map = importance_map_texture.unwrap();
+        if (!importance_map_sample(importance_map, next_float2(sg), uv, pdf))
             return false;
 
         float3 dir_os = oct_to_ndir_equal_area_unorm(uv);
@@ -61,7 +62,8 @@ public struct EnvMapLight : ILight
     {
         float3 dir_os = normalize(mul(transpose(world_from_object), sample.dir_ws));
         float2 uv = ndir_to_oct_equal_area_unorm(dir_os);
-        return importance_map_eval_pdf(importance_map_texture.unwrap(), uv) * float.INV_FOUR_PI;
+        Texture2D<float> importance_map = importance_map_texture.unwrap();
+        return importance_map_eval_pdf(importance_map, uv) * float.INV_FOUR_PI;
     }
 };
 
