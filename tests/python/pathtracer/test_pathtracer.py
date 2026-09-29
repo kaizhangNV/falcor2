@@ -81,19 +81,22 @@ def _render_mean(
     iterations: int = 1,
     enable_nee: bool = False,
     enable_mis: bool = True,
+    enable_analytic_lights: bool = False,
     enable_environment_light: bool = False,
     env_map_as_background: bool = False,
     max_depth: int = 3,
     visibility_ray_mode: VisibilityRayMode | None = None,
+    pipeline_api: f2.RayTracingPipelineAPI = f2.RayTracingPipelineAPI.legacy,
 ) -> np.ndarray:
     scene.update()
     node = ReferencePathTracerNode.create(device)
     node.output_spec = f2.ContainerSpec.texture2d(spy.Format.rgba32_float)
     node.enable_nee = enable_nee
     node.enable_mis = enable_mis
-    node.enable_analytic_lights = False
+    node.enable_analytic_lights = enable_analytic_lights
     node.enable_environment_light = enable_environment_light
     node.max_depth = max_depth
+    node.ray_tracing_pipeline_api = pipeline_api
     if visibility_ray_mode is not None:
         node.visibility_ray_mode = visibility_ray_mode
     node.env_map_as_background = env_map_as_background
@@ -112,6 +115,248 @@ def _render_mean(
         total = data if total is None else total + data
     assert total is not None
     return total / float(iterations)
+
+
+@pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
+@pytest.mark.parametrize(
+    "visibility_ray_mode", [VisibilityRayMode.ray_query, VisibilityRayMode.trace_ray]
+)
+def test_pathtracer_structural_scatter_matches_legacy(
+    device_type: spy.DeviceType,
+    visibility_ray_mode: VisibilityRayMode,
+) -> None:
+    """Structural scatter preserves hit, miss, and both visibility implementations."""
+    device = helpers.get_device(device_type, enable_experimental_features=True)
+    if visibility_ray_mode == VisibilityRayMode.ray_query and not device.has_feature(
+        spy.Feature.ray_query
+    ):
+        pytest.skip("Ray-query visibility is not supported by this device")
+
+    scene = f2.Scene.create(device)
+    material = scene.create_material(
+        f2.StandardMaterial,
+        _standard_props(
+            {
+                "base_color_factor": spy.float3(0.8, 0.6, 0.4),
+                "roughness_factor": 1.0,
+                "double_sided": True,
+            }
+        ),
+    )
+    _add_quad(scene, z=0.0, normal_z=-1.0, material=material, size=1.0)
+
+    light_entity = scene.create_entity()
+    light = light_entity.create_component(f2.ConstantLight)
+    light.radiance = spy.float3(1.0, 0.75, 0.5)
+
+    camera = _make_quad_camera(scene, width=16, height=12)
+    images = {
+        pipeline_api: _render_mean(
+            device,
+            scene,
+            camera,
+            iterations=2,
+            enable_nee=True,
+            enable_environment_light=True,
+            env_map_as_background=True,
+            max_depth=2,
+            visibility_ray_mode=visibility_ray_mode,
+            pipeline_api=pipeline_api,
+        )
+        for pipeline_api in (
+            f2.RayTracingPipelineAPI.legacy,
+            f2.RayTracingPipelineAPI.structural,
+        )
+    }
+
+    legacy = images[f2.RayTracingPipelineAPI.legacy]
+    structural = images[f2.RayTracingPipelineAPI.structural]
+    assert np.isfinite(structural).all()
+    assert structural.max() > 0.0
+    np.testing.assert_allclose(structural, legacy, rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
+@pytest.mark.parametrize(
+    "visibility_ray_mode", [VisibilityRayMode.ray_query, VisibilityRayMode.trace_ray]
+)
+def test_pathtracer_structural_analytic_scatter_matches_legacy(
+    device_type: spy.DeviceType,
+    visibility_ray_mode: VisibilityRayMode,
+) -> None:
+    """Structural scatter preserves point-light visibility without environment-light code."""
+    device = helpers.get_device(device_type, enable_experimental_features=True)
+    if visibility_ray_mode == VisibilityRayMode.ray_query and not device.has_feature(
+        spy.Feature.ray_query
+    ):
+        pytest.skip("Ray-query visibility is not supported by this device")
+
+    scene = f2.Scene.create(device)
+    material = scene.create_material(
+        f2.StandardMaterial,
+        _standard_props(
+            {
+                "base_color_factor": spy.float3(0.8, 0.6, 0.4),
+                "roughness_factor": 1.0,
+                "double_sided": True,
+            }
+        ),
+    )
+    _add_quad(scene, z=0.0, normal_z=-1.0, material=material, size=1.0)
+
+    light_entity = scene.create_entity()
+    light_transform = f2.Transform()
+    light_transform.translation = spy.float3(-0.4, 0.4, -1.0)
+    light_entity.transform = light_transform
+    light = light_entity.create_component(f2.PointLight)
+    light.intensity = spy.float3(2.0, 1.5, 1.0)
+
+    camera = _make_quad_camera(scene, width=16, height=12)
+    images = {
+        pipeline_api: _render_mean(
+            device,
+            scene,
+            camera,
+            iterations=2,
+            enable_nee=True,
+            enable_analytic_lights=True,
+            max_depth=2,
+            visibility_ray_mode=visibility_ray_mode,
+            pipeline_api=pipeline_api,
+        )
+        for pipeline_api in (
+            f2.RayTracingPipelineAPI.legacy,
+            f2.RayTracingPipelineAPI.structural,
+        )
+    }
+
+    legacy = images[f2.RayTracingPipelineAPI.legacy]
+    structural = images[f2.RayTracingPipelineAPI.structural]
+    assert np.isfinite(structural).all()
+    assert structural.max() > 0.0
+    np.testing.assert_allclose(structural, legacy, rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
+def test_pathtracer_structural_guides_and_mode_switch_match_legacy(
+    device_type: spy.DeviceType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reused node preserves material guides and padded host records across API switches."""
+    device = helpers.get_device(device_type, enable_experimental_features=True)
+
+    scene = f2.Scene.create(device)
+    material = scene.create_material(
+        f2.StandardMaterial,
+        _standard_props(
+            {
+                "base_color_factor": spy.float3(0.75, 0.5, 0.25),
+                "roughness_factor": 0.375,
+                "emissive_factor": spy.float3(0.5, 0.25, 0.125),
+                "double_sided": True,
+            }
+        ),
+    )
+    _add_quad(scene, z=0.0, normal_z=-1.0, material=material, size=1.0)
+    scene.update()
+
+    node = ReferencePathTracerNode.create(device)
+    node.output_spec = f2.ContainerSpec.texture2d(spy.Format.rgba32_float)
+    enabled_guides = {
+        "diffuse_albedo",
+        "material_color",
+        "specular_albedo",
+        "normals",
+        "roughness",
+        "emission",
+        "geometry_id",
+    }
+    node.guide_output_specs = {name: f2.ContainerSpec.auto() for name in enabled_guides}
+    node.enable_nee = False
+    node.enable_environment_light = False
+    node.max_depth = 1
+    camera = _make_quad_camera(scene, width=12, height=8)
+
+    def capture(
+        pipeline_api: f2.RayTracingPipelineAPI,
+    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        node.ray_tracing_pipeline_api = pipeline_api
+        image, guides = node(
+            scene,
+            camera,
+            iteration=0,
+            subpixel_offset=spy.float2(0.0, 0.0),
+            subpixel_random_jitter=0.0,
+        )
+        captured_guides = {
+            name: np.array(guides[name].to_numpy(), copy=True) for name in enabled_guides
+        }
+        return np.array(image.to_numpy(), copy=True), captured_guides
+
+    first_legacy_color, first_legacy_guides = capture(f2.RayTracingPipelineAPI.legacy)
+    first_legacy_module = node._module
+    first_legacy_pipeline_cache = first_legacy_module.pipeline_cache
+    first_legacy_shader_table_cache = first_legacy_module.shader_table_cache
+    first_legacy_pipeline_keys = set(first_legacy_pipeline_cache)
+    first_legacy_shader_table_keys = set(first_legacy_shader_table_cache)
+    assert first_legacy_pipeline_keys
+    assert first_legacy_shader_table_keys
+
+    real_ray_tracing_setup = f2.SceneRayTracingSetup
+    setup_calls = {"requirements": 0, "create_structural": 0}
+
+    class CountingRayTracingSetup:
+        @staticmethod
+        def get_structural_requirements(scene: f2.Scene) -> object:
+            setup_calls["requirements"] += 1
+            return real_ray_tracing_setup.get_structural_requirements(scene)
+
+        @staticmethod
+        def create_structural(*args: object, **kwargs: object) -> object:
+            setup_calls["create_structural"] += 1
+            return real_ray_tracing_setup.create_structural(*args, **kwargs)
+
+    monkeypatch.setattr(f2, "SceneRayTracingSetup", CountingRayTracingSetup)
+    structural_color, structural_guides = capture(f2.RayTracingPipelineAPI.structural)
+    structural_module = node._module
+    assert structural_module is not first_legacy_module
+    assert setup_calls == {"requirements": 1, "create_structural": 0}
+
+    requirements = real_ray_tracing_setup.get_structural_requirements(scene)
+    assert requirements.hit_group_record_count == 6
+    assert requirements.miss_shader_record_count == 3
+    assert requirements.callable_shader_record_count == 0
+
+    monkeypatch.setattr(f2, "SceneRayTracingSetup", real_ray_tracing_setup)
+    second_legacy_color, second_legacy_guides = capture(f2.RayTracingPipelineAPI.legacy)
+    assert node._module is first_legacy_module
+    assert node._module.pipeline_cache is first_legacy_pipeline_cache
+    assert node._module.shader_table_cache is first_legacy_shader_table_cache
+    assert set(node._module.pipeline_cache) == first_legacy_pipeline_keys
+    assert set(node._module.shader_table_cache) == first_legacy_shader_table_keys
+
+    assert np.isfinite(structural_color).all()
+    assert structural_color[..., :3].max() > 0.0
+    np.testing.assert_allclose(structural_color, first_legacy_color, rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(second_legacy_color, first_legacy_color, rtol=1e-4, atol=1e-5)
+
+    for name in enabled_guides - {"geometry_id"}:
+        assert np.isfinite(structural_guides[name]).all()
+        np.testing.assert_allclose(
+            structural_guides[name], first_legacy_guides[name], rtol=1e-4, atol=1e-5
+        )
+        np.testing.assert_allclose(
+            second_legacy_guides[name], first_legacy_guides[name], rtol=1e-4, atol=1e-5
+        )
+
+    assert structural_guides["material_color"][..., :3].max() > 0.0
+    assert structural_guides["emission"][..., :3].max() > 0.0
+    np.testing.assert_array_equal(
+        structural_guides["geometry_id"], first_legacy_guides["geometry_id"]
+    )
+    np.testing.assert_array_equal(
+        second_legacy_guides["geometry_id"], first_legacy_guides["geometry_id"]
+    )
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
@@ -166,24 +411,17 @@ def test_pathtracer_visibility_modes_match_when_ray_query_is_supported(
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
-def test_pathtracer_ser_scheduler_render_when_supported(
-    device_type: spy.DeviceType, device: spy.Device, helmet_scene: f2.Scene
+def test_pathtracer_ser_scheduler_maps_to_simple(
+    device_type: spy.DeviceType, device: spy.Device
 ) -> None:
-    """The SER scheduler links and renders when the device exposes SER."""
-    if not device.has_feature(spy.Feature.shader_execution_reordering):
-        pytest.skip("SER is not supported by this device")
+    """SER remains a compatible setting while Phase 4 uses simple scheduling."""
+    node = ReferencePathTracerNode.create(device)
 
-    camera = helpers.create_test_camera(helmet_scene, width=32, height=32, fov_y=45)
-    images = []
-    for mode in (SchedulingMode.simple, SchedulingMode.ser):
-        node = ReferencePathTracerNode.create(device)
-        node.scheduling_mode = mode
-        color, _ = node(helmet_scene, camera, subpixel_random_jitter=0.0)
-        images.append(color.to_numpy())
+    with pytest.warns(RuntimeWarning, match="temporarily mapped"):
+        node.scheduling_mode = SchedulingMode.ser
 
-    assert np.isfinite(images[1]).all()
-    assert images[1].max() > 0.0
-    np.testing.assert_allclose(images[0], images[1], rtol=1e-4, atol=1e-5)
+    assert node.scheduling_mode == SchedulingMode.simple
+    assert node._constants["SCHEDULING_MODE"] == int(SchedulingMode.simple)
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)
@@ -432,6 +670,7 @@ def test_pathtracer_scheduler_and_visibility_modes(
 ) -> None:
     node = ReferencePathTracerNode.create(device)
 
+    assert node.ray_tracing_pipeline_api == f2.RayTracingPipelineAPI.legacy
     assert node.scheduling_mode == SchedulingMode.simple
     expected_visibility_mode = (
         VisibilityRayMode.ray_query
@@ -451,12 +690,10 @@ def test_pathtracer_scheduler_and_visibility_modes(
         with pytest.raises(RuntimeError, match="Ray-query visibility"):
             node.visibility_ray_mode = VisibilityRayMode.ray_query
 
-    if device.has_feature(spy.Feature.shader_execution_reordering):
+    with pytest.warns(RuntimeWarning, match="temporarily mapped"):
         node.scheduling_mode = SchedulingMode.ser
-        assert node._constants["SCHEDULING_MODE"] == int(SchedulingMode.ser)
-    else:
-        with pytest.raises(RuntimeError, match="SER scheduling"):
-            node.scheduling_mode = SchedulingMode.ser
+    assert node.scheduling_mode == SchedulingMode.simple
+    assert node._constants["SCHEDULING_MODE"] == int(SchedulingMode.simple)
 
 
 @pytest.mark.parametrize("device_type", helpers.DEFAULT_DEVICE_TYPES)

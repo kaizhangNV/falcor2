@@ -7,6 +7,7 @@
 #include "falcor2/core/object.h"
 
 #include "falcor2/render/fwd.h"
+#include "falcor2/render/ray_tracing_setup.h"
 #include "falcor2/render/shared_scene_types.h"
 #include "falcor2/render/scene_requirements.h"
 #include "falcor2/utils/aabb.h"
@@ -39,6 +40,18 @@ public:
 
     explicit SelectionOverlay(ref<sgl::Device> device, std::optional<Options> options = std::nullopt);
 
+    /// Whether the occluded-selection probe uses a native ray-tracing pipeline instead of inline ray tracing.
+    bool use_raytracing_pipeline() const { return m_use_raytracing_pipeline; }
+
+    /// Select native pipeline tracing or inline tracing for the occluded-selection probe.
+    void set_use_raytracing_pipeline(bool value);
+
+    /// Shader API used when native pipeline tracing is selected.
+    RayTracingPipelineAPI ray_tracing_pipeline_api() const { return m_ray_tracing_pipeline_api; }
+
+    /// Select the legacy or structural shader API for native pipeline tracing.
+    void set_ray_tracing_pipeline_api(RayTracingPipelineAPI value);
+
     /// Options.
     const Options& options() const { return m_options; }
 
@@ -62,6 +75,9 @@ public:
 
     /// Clear the selection.
     void clear_selection();
+
+    /// Raw binary mask produced by the occluded-selection probe, or nullptr before the first draw.
+    sgl::Texture* selected_hit_texture() const { return m_selected_hit_texture; }
 
     /// Execute the selection overlay pass.
     /// Reads selected geometry instances from geometry_instance_id_texture and writes
@@ -88,6 +104,7 @@ private:
         m_selection_bitmap.clear();
         m_selection_bitmap_dirty = true;
         m_aabb_valid = false;
+        invalidate_structural_metal_probe();
     }
 
     void selection_bitmap_set(uint32_t id)
@@ -99,6 +116,8 @@ private:
         m_selection_bitmap[index] |= bit;
         m_selection_bitmap_dirty = true;
     }
+
+    void invalidate_structural_metal_probe();
 
     void create_probe_kernel(const Scene* scene);
     void update_aabb();
@@ -126,6 +145,7 @@ private:
 
     // Raytracing pipeline state (for CUDA/OptiX).
     bool m_use_raytracing_pipeline{false};
+    RayTracingPipelineAPI m_ray_tracing_pipeline_api{RayTracingPipelineAPI::legacy};
     uint64_t m_requirements_generation{0};
     struct ProbeRT {
         ref<sgl::ShaderProgram> program;

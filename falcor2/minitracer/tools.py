@@ -13,7 +13,7 @@ from slangpy.core.function import FunctionNode
 
 from falcor2.minitracer.camera import Camera
 from falcor2.minitracer.accumulator import Accumulator
-from falcor2.minitracer.pathtracer import PathTracer
+from falcor2.minitracer.pathtracer import PathTracer, RayTracingPipelineAPI
 from falcor2.minitracer.scene import Scene, DirtyFlag
 from falcor2.minitracer.importerutils import load_usd_scene, load_gltf_scene
 
@@ -36,13 +36,14 @@ def create_device(
 ) -> spy.Device:
     """
     Helper to creates a new SlangPy device configured correctly for use with MiniTracer
-    with the most basic options.
+    with the most basic options, including Slang's experimental structural ray tracing API.
     """
     return spy.Device(
         type=device_type,
         compiler_options={
             "include_paths": get_slang_include_paths()
             + [Path(p) for p in additional_include_paths],
+            "enable_experimental_features": True,
         },
     )
 
@@ -158,6 +159,16 @@ class Renderer:
     def use_raytracing_pipeline(self, value: bool):
         """Enable/disable ray tracing pipeline (default: inline on d3d/vk, rtp on cuda)."""
         self.path_tracer.use_raytracing_pipeline = value
+
+    @property
+    def ray_tracing_pipeline_api(self) -> RayTracingPipelineAPI:
+        """Get the API used when ray tracing pipeline mode is enabled."""
+        return self.path_tracer.ray_tracing_pipeline_api
+
+    @ray_tracing_pipeline_api.setter
+    def ray_tracing_pipeline_api(self, value: Union[RayTracingPipelineAPI, str]):
+        """Select the legacy or structural ray tracing pipeline API."""
+        self.path_tracer.ray_tracing_pipeline_api = value
 
     def render(self, scene: Scene, camera: Camera, spp: int = 1) -> spy.Tensor:
         """
@@ -285,12 +296,15 @@ class Renderer:
             "roughness": roughness,
         }
 
-    def load_module(self, path: PathLike[str]) -> None:
+    def load_module(self, path: PathLike[str]) -> spy.Module:
         """
-        Add a slang module plugin to the path tracer.
+        Add a Slang module plugin to the path tracer.
+
+        Select the desired ray tracing mode and pipeline API before loading a plugin so the
+        plugin is composed with only that mode's pipeline stages.
 
         Args:
-            path: Path to the slang module file
+            path: Path to the Slang module file
         """
         return self.path_tracer.load_module(path)
 

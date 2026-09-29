@@ -9,9 +9,15 @@
 
 #include <sgl/device/device.h>
 
+#include <limits>
+
 namespace falcor {
 
 static constexpr const char* DUMMY_HIT_GROUP_NAME = "__dummy_hit_group";
+static constexpr shared::GeometryType GEOMETRY_TYPES[] = {
+    shared::GeometryType::triangle,
+    shared::GeometryType::lss,
+};
 
 SceneRayTracingSetup
 SceneRayTracingSetup::create(const Scene* scene, std::span<const RayDesc> ray_descs, std::optional<Options> options)
@@ -119,11 +125,6 @@ SceneRayTracingSetup SceneRayTracingSetup::create(
     };
 
     // Geometry types in enum order to match policy expectations.
-    static constexpr shared::GeometryType geometry_types[] = {
-        shared::GeometryType::triangle,
-        shared::GeometryType::lss,
-    };
-
     // Process each ray type required by the policy.
     // Ray types beyond what the user provided get dummy (empty) entries.
     // Within each ray type, geometry types not in the hit_groups map also get dummy entries.
@@ -149,7 +150,7 @@ SceneRayTracingSetup SceneRayTracingSetup::create(
 
             // Process each geometry type.
             for (uint32_t gt = 0; gt < policy.geometry_type_count; ++gt) {
-                shared::GeometryType geom_type = geometry_types[gt];
+                shared::GeometryType geom_type = GEOMETRY_TYPES[gt];
 
                 // Skip geometry types not present in the scene if requested.
                 if (options.skip_unused_geometry_types && !scene->has_geometry_type(geom_type)) {
@@ -210,6 +211,131 @@ SceneRayTracingSetup SceneRayTracingSetup::create(
     return result;
 }
 
+SceneRayTracingSetup::StructuralRequirements SceneRayTracingSetup::get_structural_requirements(const Scene* scene)
+{
+    FALCOR_CHECK_NOT_NULL(scene);
+
+    const HitGroupPolicy& policy = scene->hit_group_policy();
+    FALCOR_CHECK(
+        policy.geometry_type_count <= std::size(GEOMETRY_TYPES),
+        "Scene hit-group policy contains unsupported geometry-type rows."
+    );
+    FALCOR_CHECK(policy.mode == HitGroupPolicy::Mode::per_geometry_type, "Only per_geometry_type mode is supported.");
+    FALCOR_CHECK(
+        !scene->has_geometry_type(shared::GeometryType::lss),
+        "Structural SceneRayTracingSetup does not support LSS geometry yet."
+    );
+
+    return {
+        .hit_group_record_count = policy.geometry_type_count * policy.ray_type_count,
+        .miss_shader_record_count = policy.ray_type_count,
+        .callable_shader_record_count = 0,
+        .pipeline_flags = sgl::RayTracingPipelineFlags::none,
+    };
+}
+
+SceneRayTracingSetup SceneRayTracingSetup::create_structural(
+    const Scene* scene,
+    sgl::SlangModule* module,
+    std::string_view schema_name,
+    std::span<const StructuralRayDesc> ray_descs,
+    std::optional<Options> options_
+)
+{
+    FALCOR_CHECK_NOT_NULL(module);
+    FALCOR_CHECK(!schema_name.empty(), "schema_name must not be empty.");
+
+    const StructuralRequirements requirements = get_structural_requirements(scene);
+    Options options = options_.value_or(Options{});
+    const HitGroupPolicy& policy = scene->hit_group_policy();
+    FALCOR_CHECK(!ray_descs.empty(), "ray_descs must not be empty.");
+    FALCOR_CHECK(
+        ray_descs.size() <= policy.ray_type_count,
+        "ray_descs contains more ray types than the scene hit-group policy supports."
+    );
+
+    std::vector<std::string> hit_group_types(requirements.hit_group_record_count);
+    std::vector<std::vector<uint8_t>> hit_group_record_data(requirements.hit_group_record_count);
+    std::vector<std::string> miss_shader_types(requirements.miss_shader_record_count);
+    std::vector<std::vector<uint8_t>> miss_shader_record_data(requirements.miss_shader_record_count);
+
+    // Falcor's TLAS instance contribution selects a geometry-major block. The ray contribution
+    // then selects the record within that block: [geometry * ray_type_count + ray].
+    for (uint32_t ray_index = 0; ray_index < ray_descs.size(); ++ray_index) {
+        const StructuralRayDesc& ray_desc = ray_descs[ray_index];
+        miss_shader_types[ray_index] = ray_desc.miss_shader.type_name;
+        miss_shader_record_data[ray_index] = ray_desc.miss_shader.data;
+
+        for (uint32_t geometry_index = 0; geometry_index < policy.geometry_type_count; ++geometry_index) {
+            const auto geometry_type = GEOMETRY_TYPES[geometry_index];
+            if (options.skip_unused_geometry_types && !scene->has_geometry_type(geometry_type))
+                continue;
+            auto found = ray_desc.hit_groups.find(geometry_type);
+            if (found == ray_desc.hit_groups.end())
+                continue;
+            const uint32_t physical_index = geometry_index * policy.ray_type_count + ray_index;
+            hit_group_types[physical_index] = found->second.type_name;
+            hit_group_record_data[physical_index] = found->second.data;
+        }
+    }
+
+    sgl::StructuralRayTracingBindings bindings = sgl::create_structural_ray_tracing_bindings(
+        module,
+        schema_name,
+        {
+            .hit_group_types = std::move(hit_group_types),
+            .miss_shader_types = std::move(miss_shader_types),
+            .hit_group_record_data = std::move(hit_group_record_data),
+            .miss_shader_record_data = std::move(miss_shader_record_data),
+        }
+    );
+
+    FALCOR_CHECK(
+        bindings.hit_group_names.size() == requirements.hit_group_record_count,
+        "Structural schema '{}' produced {} hit-group records; the scene policy requires {}.",
+        schema_name,
+        bindings.hit_group_names.size(),
+        requirements.hit_group_record_count
+    );
+    FALCOR_CHECK(
+        bindings.miss_entry_points.size() == requirements.miss_shader_record_count,
+        "Structural schema '{}' produced {} miss records; the scene policy requires {}.",
+        schema_name,
+        bindings.miss_entry_points.size(),
+        requirements.miss_shader_record_count
+    );
+    FALCOR_CHECK(
+        bindings.callable_entry_points.size() == requirements.callable_shader_record_count,
+        "Structural SceneRayTracingSetup does not accept callable records yet."
+    );
+
+    SceneRayTracingSetup result;
+    result.hit_groups = std::move(bindings.hit_groups);
+    result.sbt_hit_group_names = std::move(bindings.hit_group_names);
+    result.sbt_miss_entry_points = std::move(bindings.miss_entry_points);
+    result.sbt_callable_entry_points = std::move(bindings.callable_entry_points);
+    result.sbt_hit_group_record_data = std::move(bindings.hit_group_record_data);
+    result.sbt_miss_shader_record_data = std::move(bindings.miss_shader_record_data);
+    result.sbt_callable_shader_record_data = std::move(bindings.callable_shader_record_data);
+    result.pipeline_flags = requirements.pipeline_flags;
+    FALCOR_CHECK(
+        bindings.max_ray_payload_size <= std::numeric_limits<uint32_t>::max()
+            && bindings.max_attribute_size <= std::numeric_limits<uint32_t>::max(),
+        "Structural schema '{}' reflects ABI sizes that exceed native pipeline limits.",
+        schema_name
+    );
+    result.max_ray_payload_size = uint32_t(bindings.max_ray_payload_size);
+    result.max_attribute_size = uint32_t(bindings.max_attribute_size);
+    result.m_has_reflected_abi_limits = true;
+    result.m_materialized_entry_points = std::move(bindings.entry_points);
+
+    result.entry_points.reserve(result.m_materialized_entry_points.size());
+    for (const auto& entry_point : result.m_materialized_entry_points)
+        result.entry_points.push_back(entry_point->name());
+
+    return result;
+}
+
 sgl::ref<sgl::ShaderProgram> SceneRayTracingSetup::link_program(
     sgl::ref<sgl::SlangModule> module,
     std::vector<std::string> additional_entry_points
@@ -219,15 +345,27 @@ sgl::ref<sgl::ShaderProgram> SceneRayTracingSetup::link_program(
     resolved.reserve(additional_entry_points.size() + entry_points.size());
     for (const auto& name : additional_entry_points)
         resolved.push_back(module->entry_point(name));
-    for (const auto& name : entry_points)
-        resolved.push_back(module->entry_point(name));
-    return module->session()->device()->link_program({module}, std::move(resolved));
+    if (m_materialized_entry_points.empty()) {
+        for (const auto& name : entry_points)
+            resolved.push_back(module->entry_point(name));
+    } else {
+        FALCOR_CHECK(
+            entry_points.size() == m_materialized_entry_points.size(),
+            "Structural entry point metadata was modified after setup creation."
+        );
+        resolved.insert(resolved.end(), m_materialized_entry_points.begin(), m_materialized_entry_points.end());
+    }
+    return module->session()->link_program({module}, std::move(resolved));
 }
 
 sgl::ref<sgl::RayTracingPipeline> SceneRayTracingSetup::create_pipeline(sgl::RayTracingPipelineDesc desc) const
 {
     desc.hit_groups = hit_groups;
     desc.flags = desc.flags | pipeline_flags;
+    if (m_has_reflected_abi_limits) {
+        desc.max_ray_payload_size = max_ray_payload_size;
+        desc.max_attribute_size = max_attribute_size;
+    }
     return desc.program->device()->create_ray_tracing_pipeline(std::move(desc));
 }
 
@@ -241,6 +379,10 @@ sgl::ref<sgl::ShaderTable> SceneRayTracingSetup::create_shader_table(
         .ray_gen_entry_points = std::move(ray_gen_entry_points),
         .miss_entry_points = sbt_miss_entry_points,
         .hit_group_names = sbt_hit_group_names,
+        .callable_entry_points = sbt_callable_entry_points,
+        .miss_shader_record_data = sbt_miss_shader_record_data,
+        .hit_group_record_data = sbt_hit_group_record_data,
+        .callable_shader_record_data = sbt_callable_shader_record_data,
     });
 }
 

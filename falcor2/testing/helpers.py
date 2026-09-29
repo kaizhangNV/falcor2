@@ -51,6 +51,7 @@ DEVICE_CACHE: dict[
         SlangFloatingPointMode,
         tuple[NativeHandle, ...],
         bool,
+        bool,
         Path | None,
         Path | None,
     ],
@@ -193,6 +194,7 @@ def get_device(
     floating_point_mode: SlangFloatingPointMode = SlangFloatingPointMode.default,
     existing_device_handles: Optional[Sequence[NativeHandle]] = None,
     enable_print: bool = False,
+    enable_experimental_features: bool = False,
 ) -> Device:
     module_cache_path, shader_cache_path = get_module_and_shader_cache_path()
     cache_key = (
@@ -201,6 +203,7 @@ def get_device(
         floating_point_mode,
         tuple(existing_device_handles) if existing_device_handles else (),
         enable_print,
+        enable_experimental_features,
         module_cache_path,
         shader_cache_path,
     )
@@ -223,6 +226,8 @@ def get_device(
         label += f"-{floating_point_mode.name}"
     if enable_print:
         label += "-print"
+    if enable_experimental_features:
+        label += "-experimental"
 
     device = Device(
         type=type,
@@ -243,6 +248,7 @@ def get_device(
                     else SlangDebugInfoLevel.none
                 ),
                 "floating_point_mode": floating_point_mode,
+                "enable_experimental_features": enable_experimental_features,
             }
         ),
         enable_cuda_interop=cuda_interop,

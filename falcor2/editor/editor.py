@@ -157,6 +157,21 @@ class Editor:
             )
 
     @property
+    def scene_editor(self) -> f2.ui.SceneEditor:
+        """Scene-editor UI used for selection, inspection, and viewport interaction."""
+        return self._scene_editor
+
+    @property
+    def scene_picker(self) -> f2.ui.ScenePicker:
+        """GPU scene picker used by the editor viewport."""
+        return self._scene_picker
+
+    @property
+    def selection_overlay(self) -> f2.ui.SelectionOverlay:
+        """Selection overlay used by the editor viewport."""
+        return self._selection_overlay
+
+    @property
     def output(self) -> Optional[FrameOutput]:
         return self._output
 

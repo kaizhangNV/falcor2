@@ -19,7 +19,35 @@
 #include <sgl/device/raytracing.h>
 #include <sgl/device/shader_cursor.h>
 
+#include <cstring>
+
 namespace falcor::ui {
+
+namespace {
+
+struct SelectionProbeHitRecordData {
+    uint64_t selection_bitmap_device_address;
+    uint32_t selection_bitmap_bit_count;
+    uint32_t reserved;
+};
+
+static_assert(sizeof(SelectionProbeHitRecordData) == 16);
+
+std::vector<uint8_t>
+make_selection_probe_hit_record_data(sgl::Buffer* selection_bitmap, uint32_t bit_count, bool populate_metal_record)
+{
+    FALCOR_CHECK_NOT_NULL(selection_bitmap);
+    const SelectionProbeHitRecordData record{
+        .selection_bitmap_device_address = populate_metal_record ? selection_bitmap->device_address() : 0,
+        .selection_bitmap_bit_count = populate_metal_record ? bit_count : 0,
+        .reserved = 0,
+    };
+    std::vector<uint8_t> result(sizeof(record));
+    std::memcpy(result.data(), &record, sizeof(record));
+    return result;
+}
+
+} // namespace
 
 SelectionOverlay::SelectionOverlay(ref<sgl::Device> device, std::optional<Options> options)
     : m_device(std::move(device))
@@ -30,6 +58,34 @@ SelectionOverlay::SelectionOverlay(ref<sgl::Device> device, std::optional<Option
     m_kernel = m_device->create_compute_kernel({.program = program});
 
     m_use_raytracing_pipeline = (m_device->type() == sgl::DeviceType::cuda);
+}
+
+void SelectionOverlay::set_use_raytracing_pipeline(bool value)
+{
+    FALCOR_CHECK(
+        value || m_device->type() != sgl::DeviceType::cuda,
+        "Inline SelectionOverlay ray tracing is not supported on CUDA/OptiX devices."
+    );
+    FALCOR_CHECK(
+        !value || m_device->has_feature(sgl::Feature::ray_tracing),
+        "SelectionOverlay ray-tracing pipelines are not supported on this device."
+    );
+    m_use_raytracing_pipeline = value;
+}
+
+void SelectionOverlay::set_ray_tracing_pipeline_api(RayTracingPipelineAPI value)
+{
+    if (value == RayTracingPipelineAPI::structural) {
+        FALCOR_CHECK(
+            m_device->slang_session()->desc().compiler_options.enable_experimental_features,
+            "Structural SelectionOverlay ray tracing requires enable_experimental_features in the device compiler "
+            "options."
+        );
+    }
+    if (m_ray_tracing_pipeline_api == value)
+        return;
+    m_ray_tracing_pipeline_api = value;
+    m_probe_rt = {};
 }
 
 void SelectionOverlay::set_options(const Options& options)
@@ -81,6 +137,15 @@ void SelectionOverlay::clear_selection()
     m_selected_entities.clear();
 }
 
+void SelectionOverlay::invalidate_structural_metal_probe()
+{
+    if (m_ray_tracing_pipeline_api == RayTracingPipelineAPI::structural && m_device->type() == sgl::DeviceType::metal) {
+        // Structural Metal candidate stages read the bitmap address and logical size from their
+        // host-owned hit record. Rebuild the pipeline and table after selection changes.
+        m_probe_rt = {};
+    }
+}
+
 void SelectionOverlay::draw_overlay(
     sgl::CommandEncoder* command_encoder,
     sgl::Texture* output_texture,
@@ -110,6 +175,7 @@ void SelectionOverlay::draw_overlay(
             .size = m_selection_bitmap.size() * sizeof(uint32_t),
             .usage = sgl::BufferUsage::shader_resource,
         });
+        invalidate_structural_metal_probe();
     }
 
     if (m_selection_bitmap_dirty) {
@@ -190,8 +256,8 @@ void SelectionOverlay::draw_overlay(
         [&](sgl::ShaderCursor cursor)
         {
             cursor = cursor.find_entry_point(0);
-            cursor["output_texture"] = ref(output_texture);
-            cursor["geometry_instance_id_texture"] = ref(geometry_instance_id_texture);
+            cursor["output_texture"] = ref<sgl::Texture>(output_texture);
+            cursor["geometry_instance_id_texture"] = ref<sgl::Texture>(geometry_instance_id_texture);
             cursor["selected_hit_texture"] = m_selected_hit_texture;
             cursor["selection_bitmap"] = m_selection_bitmap_buffer;
             cursor["selection_bitmap_bit_count"] = bitmap_bit_count;
@@ -220,24 +286,50 @@ void SelectionOverlay::create_probe_kernel(const Scene* scene)
 
     const SceneRequirements& requirements = scene->requirements();
 
+    const bool use_structural_api
+        = m_use_raytracing_pipeline && m_ray_tracing_pipeline_api == RayTracingPipelineAPI::structural;
+    const char* shader_path = use_structural_api ? "falcor2/ui/kernels/selection_probe_structural.slang"
+                                                 : "falcor2/ui/kernels/selection_probe.slang";
+
     std::vector<ref<sgl::SlangModule>> modules;
-    modules.push_back(m_device->load_module("falcor2/ui/kernels/selection_probe.slang"));
+    modules.push_back(m_device->load_module(shader_path));
     modules.insert(modules.end(), requirements.modules.begin(), requirements.modules.end());
-    ref<sgl::SlangModule> module
-        = m_device->compose_modules("selection_probe", modules, requirements.type_conformances);
+    ref<sgl::SlangModule> module = m_device->compose_modules(
+        use_structural_api ? "selection_probe_structural" : "selection_probe",
+        modules,
+        requirements.type_conformances
+    );
 
     if (m_use_raytracing_pipeline) {
-        SceneRayTracingSetup::RayDesc probe_ray_type;
-        probe_ray_type.name = "probe";
-        probe_ray_type.has_miss = true;
-        probe_ray_type.has_any_hit = true;
-        SceneRayTracingSetup rt_setup = SceneRayTracingSetup::create(scene, {probe_ray_type});
+        SceneRayTracingSetup rt_setup;
+        if (use_structural_api) {
+            SceneRayTracingSetup::StructuralRayDesc probe_ray;
+            probe_ray.miss_shader.type_name = "SelectionProbeMiss";
+            probe_ray.hit_groups[shared::GeometryType::triangle].type_name = "SelectionProbeHitGroup";
+            probe_ray.hit_groups[shared::GeometryType::triangle].data = make_selection_probe_hit_record_data(
+                m_selection_bitmap_buffer.get(),
+                static_cast<uint32_t>(m_selection_bitmap.size() * 32),
+                m_device->type() == sgl::DeviceType::metal
+            );
+            rt_setup = SceneRayTracingSetup::create_structural(
+                scene,
+                module.get(),
+                "SelectionProbeProgramSchema",
+                {std::move(probe_ray)}
+            );
+        } else {
+            SceneRayTracingSetup::RayDesc probe_ray_type;
+            probe_ray_type.name = "probe";
+            probe_ray_type.has_miss = true;
+            probe_ray_type.has_any_hit = true;
+            rt_setup = SceneRayTracingSetup::create(scene, {probe_ray_type});
+        }
 
         m_probe_rt.program = rt_setup.link_program(module, {"selection_probe_ray_gen"});
         m_probe_rt.pipeline = rt_setup.create_pipeline({
             .program = m_probe_rt.program,
             .max_recursion = 1,
-            .max_ray_payload_size = 128,
+            .max_ray_payload_size = use_structural_api ? 0u : 128u,
         });
         m_probe_rt.shader_table = rt_setup.create_shader_table(m_probe_rt.program, {"selection_probe_ray_gen"});
     } else {
